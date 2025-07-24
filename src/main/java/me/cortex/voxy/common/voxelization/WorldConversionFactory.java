@@ -192,14 +192,6 @@ public class WorldConversionFactory {
         return section;
     }
 
-
-
-
-
-
-
-
-
     private static int G(int x, int y, int z) {
         return ((y<<8)|(z<<4)|x);
     }

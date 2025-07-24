@@ -1,6 +1,8 @@
 package me.cortex.voxy.commonImpl.importers;
 
 import com.mojang.serialization.Codec;
+
+import me.cortex.voxy.client.core.util.AbyssUtil;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.util.MemoryBuffer;
 import me.cortex.voxy.common.util.UnsafeUtil;
@@ -503,6 +505,9 @@ public class WorldImporter implements IDataImporter {
                     }
                     if (skyLight != null) {
                         sky = skyLight.get(bx, by, bz);
+                    }
+                    if (AbyssUtil.getSection(x << 4) > 3) { // when we import a world we force our skylight value to 0 depending on the abyss layer
+                        sky = 0;
                     }
                     return (byte) (sky|(block<<4));
                 }
