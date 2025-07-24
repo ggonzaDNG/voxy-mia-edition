@@ -26,5 +26,8 @@
   "voxy.config.general.vanilla_fog.tooltip": "Enables or disables vanilla fog effect",
 
   "voxy.config.general.render_statistics": "Enable render statistics",
-  "voxy.config.general.render_statistics.tooltip": "Enable render statistics in F3 menu, useful for debugging"
+  "voxy.config.general.render_statistics.tooltip": "Enable render statistics in F3 menu, useful for debugging",
+
+  "voxy.config.general.stackLayers": "Enable the stacked layer effect",
+  "voxy.config.general.stackLayers.tooltip": "Enable the ability to stack the LODs of different layers to see the whole abyss. (Only works in Mine in Abyss)"
 }

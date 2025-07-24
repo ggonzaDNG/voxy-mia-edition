@@ -16,6 +16,8 @@ import me.cortex.voxy.client.core.rendering.util.DownloadStream;
 import me.cortex.voxy.client.core.rendering.util.PrintfDebugUtil;
 import me.cortex.voxy.client.core.rendering.util.SharedIndexBuffer;
 import me.cortex.voxy.client.core.rendering.util.UploadStream;
+import me.cortex.voxy.client.core.util.AbyssUtil;
+import me.cortex.voxy.client.core.util.AbyssUtil.Coords;
 import me.cortex.voxy.client.core.util.IrisUtil;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.thread.ServiceThreadPool;
@@ -61,7 +63,7 @@ public class VoxyRenderSystem {
             int maxSec = (MinecraftClient.getInstance().world.getTopSectionCoord() - 1) >> 5;
 
             //Do some very cheeky stuff for MiB
-            if (false) {
+            if (VoxyConfig.CONFIG.stackLayers) {
                 minSec = -8;
                 maxSec = 7;
             }
@@ -125,14 +127,12 @@ public class VoxyRenderSystem {
     }
 
     public void renderOpaque(ChunkRenderMatrices matrices, FogParameters fogParameters, double cameraX, double cameraY, double cameraZ) {
-        if (IrisUtil.irisShadowActive()) {
-            return;
-        }
+        
         TimingStatistics.resetSamplers();
 
 
         //Do some very cheeky stuff for MiB
-        if (false) {
+        if (VoxyConfig.CONFIG.stackLayers) {
             int sector = (((int)Math.floor(cameraX)>>4)+512)>>10;
             cameraX -= sector<<14;//10+4
             cameraY += (16+(256-32-sector*30))*16;
@@ -244,6 +244,27 @@ public class VoxyRenderSystem {
             debug.add("Extra 2 time: " + TimingStatistics.E.pVal() + ", " + TimingStatistics.F.pVal() + ", " + TimingStatistics.G.pVal() + ", " + TimingStatistics.H.pVal() + ", " + TimingStatistics.I.pVal());
         }
         PrintfDebugUtil.addToOut(debug);
+    }
+
+    public void addDebugInfo_Abyss(List<String> debug) {
+
+        // made by semyon422
+
+        var client = MinecraftClient.getInstance();
+        var camera = client.gameRenderer.getCamera();
+        
+        int x = camera.getBlockPos().getX();
+        int y = camera.getBlockPos().getY();
+        int z = camera.getBlockPos().getZ();
+
+        int section = AbyssUtil.getSection(x);
+        String sectionName = AbyssUtil.getSectionName(section);
+
+        Coords abyssCoords = AbyssUtil.toAbyss(x, y);
+        x = (int)abyssCoords.x;
+        y = (int)abyssCoords.y;
+
+        debug.add(10, "Abyss: " + x + " " + y + " " + z + " [" + sectionName + "]");
     }
 
     public void shutdown() {

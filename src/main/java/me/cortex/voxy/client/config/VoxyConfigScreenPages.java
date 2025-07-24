@@ -147,6 +147,13 @@ public abstract class VoxyConfigScreenPages {
                         .setBinding((s, v)-> RenderStatistics.enabled = v, s -> RenderStatistics.enabled)
                         .setFlags(OptionFlag.REQUIRES_RENDERER_RELOAD)
                         .build()
+                ).add(OptionImpl.createBuilder(boolean.class, storage)
+                        .setName(Text.translatable("voxy.config.general.stackLayers"))
+                        .setTooltip(Text.translatable("voxy.config.general.stackLayers.tooltip"))
+                        .setControl(TickBoxControl::new)
+                        .setBinding((s, v)-> s.stackLayers = v, s -> s.stackLayers)
+                        .setFlags(OptionFlag.REQUIRES_RENDERER_RELOAD)
+                        .build()
                 ).build()
         );
         return new OptionPage(Text.translatable("voxy.config.title"), ImmutableList.copyOf(groups));
