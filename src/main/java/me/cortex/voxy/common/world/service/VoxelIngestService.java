@@ -1,5 +1,6 @@
 package me.cortex.voxy.common.world.service;
 
+import me.cortex.voxy.client.core.util.AbyssUtil;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.voxelization.ILightingSupplier;
 import me.cortex.voxy.common.voxelization.VoxelizedSection;
@@ -53,32 +54,39 @@ public class VoxelIngestService {
 
     @NotNull
     private static ILightingSupplier getLightingSupplier(IngestSection task) {
-        ILightingSupplier supplier = (x,y,z) -> (byte) 0;
+        final int blockX = task.cx * 16;
+        final int sectionIndex = AbyssUtil.getSection(blockX);
+        
+        final boolean forceDark = sectionIndex > 3; 
+
+        ILightingSupplier supplier = (x, y, z) -> (byte) 0;
         var sla = task.skyLight;
         var bla = task.blockLight;
         boolean sl = sla != null && !sla.isUninitialized();
         boolean bl = bla != null && !bla.isUninitialized();
+
         if (sl || bl) {
             if (sl && bl) {
-                supplier = (x,y,z)-> {
-                    int block = Math.min(15,bla.get(x, y, z));
-                    int sky = Math.min(15,sla.get(x, y, z));
-                    return (byte) (sky|(block<<4));
+                supplier = (x, y, z) -> {
+                    int block = Math.min(15, bla.get(x, y, z));
+                    int sky = forceDark ? 0 : Math.min(15, sla.get(x, y, z));
+                    return (byte) (sky | (block << 4));
                 };
             } else if (bl) {
-                supplier = (x,y,z)-> {
-                    int block = Math.min(15,bla.get(x, y, z));
+                supplier = (x, y, z) -> {
+                    int block = Math.min(15, bla.get(x, y, z));
                     int sky = 0;
-                    return (byte) (sky|(block<<4));
+                    return (byte) (sky | (block << 4));
                 };
             } else {
-                supplier = (x,y,z)-> {
+                supplier = (x, y, z) -> {
                     int block = 0;
-                    int sky = Math.min(15,sla.get(x, y, z));
-                    return (byte) (sky|(block<<4));
+                    int sky = forceDark ? 0 : Math.min(15, sla.get(x, y, z));
+                    return (byte) (sky | (block << 4));
                 };
             }
         }
+
         return supplier;
     }
 

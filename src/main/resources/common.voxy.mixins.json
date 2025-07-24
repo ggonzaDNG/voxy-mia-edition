@@ -7,6 +7,8 @@
   },
   "mixins": [
     "chunky.MixinFabricWorld",
-    "minecraft.MixinWorld"
+    "minecraft.MixinWorld",
+    "minecraft.MixinSkyLightStorage",
+    "minecraft.MixinLightTextureManager"
   ]
 }

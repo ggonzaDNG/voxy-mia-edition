@@ -96,6 +96,7 @@ public class ModelTextureBakery {
 
             @Override
             public int getLightLevel(LightType type, BlockPos pos) {
+                
                 return 0;
             }
 
