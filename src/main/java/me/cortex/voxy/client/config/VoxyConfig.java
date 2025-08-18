@@ -81,4 +81,8 @@ public class VoxyConfig implements OptionStorage<VoxyConfig> {
     public VoxyConfig getData() {
         return this;
     }
+
+    public boolean isRenderingEnabled() {
+        return VoxyCommon.isAvailable() && this.enabled && this.enableRendering;
+    }
 }

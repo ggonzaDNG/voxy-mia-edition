@@ -2,17 +2,18 @@ package me.cortex.voxy.client.core.rendering.section;
 
 
 import me.cortex.voxy.client.RenderStatistics;
+import me.cortex.voxy.client.core.AbstractRenderPipeline;
 import me.cortex.voxy.client.core.gl.Capabilities;
 import me.cortex.voxy.client.core.gl.GlBuffer;
-import me.cortex.voxy.client.core.gl.GlTexture;
+import me.cortex.voxy.client.core.gl.GlVertexArray;
 import me.cortex.voxy.client.core.gl.shader.Shader;
+import me.cortex.voxy.client.core.gl.shader.ShaderLoader;
 import me.cortex.voxy.client.core.gl.shader.ShaderType;
 import me.cortex.voxy.client.core.model.ModelStore;
 import me.cortex.voxy.client.core.rendering.section.geometry.BasicSectionGeometryData;
-import me.cortex.voxy.client.core.rendering.util.LightMapHelper;
-import me.cortex.voxy.client.core.rendering.RenderService;
-import me.cortex.voxy.client.core.rendering.util.SharedIndexBuffer;
 import me.cortex.voxy.client.core.rendering.util.DownloadStream;
+import me.cortex.voxy.client.core.rendering.util.LightMapHelper;
+import me.cortex.voxy.client.core.rendering.util.SharedIndexBuffer;
 import me.cortex.voxy.client.core.rendering.util.UploadStream;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.world.WorldEngine;
@@ -34,7 +35,6 @@ import static org.lwjgl.opengl.GL40C.GL_DRAW_INDIRECT_BUFFER;
 import static org.lwjgl.opengl.GL42.glMemoryBarrier;
 import static org.lwjgl.opengl.GL43.*;
 import static org.lwjgl.opengl.GL45.glBindTextureUnit;
-import static org.lwjgl.opengl.GL45.glClearNamedBufferData;
 import static org.lwjgl.opengl.NVRepresentativeFragmentTest.GL_REPRESENTATIVE_FRAGMENT_TEST_NV;
 
 //Uses MDIC to render the sections
@@ -42,11 +42,8 @@ public class MDICSectionRenderer extends AbstractSectionRenderer<MDICViewport, B
     private static final int TRANSLUCENT_OFFSET = 400_000;//in draw calls
     private static final int TEMPORAL_OFFSET = 500_000;//in draw calls
     private static final int STATISTICS_BUFFER_BINDING = 8;
-    private final Shader terrainShader = Shader.make()
-            .defineIf("DEBUG_RENDER", false)
-            .add(ShaderType.VERTEX, "voxy:lod/gl46/quads2.vert")
-            .add(ShaderType.FRAGMENT, "voxy:lod/gl46/quads.frag")
-            .compile();
+    private final Shader terrainShader;
+    private final Shader translucentTerrainShader;
 
     private final Shader commandGenShader = Shader.make()
             .define("TRANSLUCENT_WRITE_BASE", 1024)
@@ -70,7 +67,8 @@ public class MDICSectionRenderer extends AbstractSectionRenderer<MDICViewport, B
             .compile();
 
     private final Shader prefixSumShader = Shader.make()
-            .add(ShaderType.COMPUTE, "voxy:util/prefixsum/inital3.comp")
+            //Use subgroup prefix sum if possible otherwise use dodgy... slow prefix sum
+            .add(ShaderType.COMPUTE, Capabilities.INSTANCE.subgroup?"voxy:util/prefixsum/inital3.comp":"voxy:util/prefixsum/simple.comp")
             .define("IO_BUFFER", 0)
             .compile();
 
@@ -90,8 +88,46 @@ public class MDICSectionRenderer extends AbstractSectionRenderer<MDICViewport, B
     //Statistics
     private final GlBuffer statisticsBuffer = new GlBuffer(1024).zero();
 
-    public MDICSectionRenderer(ModelStore modelStore, BasicSectionGeometryData geometryData) {
+    private final AbstractRenderPipeline pipeline;
+    public MDICSectionRenderer(AbstractRenderPipeline pipeline, ModelStore modelStore, BasicSectionGeometryData geometryData) {
         super(modelStore, geometryData);
+        this.pipeline = pipeline;
+        //The pipeline can be used to transform the renderer in abstract ways
+        var builder = Shader.make()
+                .defineIf("DEBUG_RENDER", false)
+                .add(ShaderType.VERTEX, "voxy:lod/gl46/quads2.vert");
+
+        String frag = ShaderLoader.parse("voxy:lod/gl46/quads.frag");
+
+        String opaqueFrag = pipeline.patchOpaqueShader(this, frag);
+        opaqueFrag = opaqueFrag==null?frag:opaqueFrag;
+
+        //TODO: find a more robust/nicer way todo this
+        this.terrainShader = tryCompilePatchedOrNormal(builder, opaqueFrag, frag);
+
+        String translucentFrag = pipeline.patchTranslucentShader(this, frag);
+        if (translucentFrag != null) {
+            this.translucentTerrainShader = tryCompilePatchedOrNormal(builder, translucentFrag, frag);
+        } else {
+            this.translucentTerrainShader = this.terrainShader;
+        }
+    }
+
+    private static Shader tryCompilePatchedOrNormal(Shader.Builder<?> builder, String shader, String original) {
+        boolean patched = shader != original;//This is the correct comparison type (reference)
+        try {
+            return builder.clone()
+                    .defineIf("PATCHED_SHADER", patched)
+                    .addSource(ShaderType.FRAGMENT, shader)
+                    .compile();
+        } catch (RuntimeException e) {
+            if (patched) {
+                Logger.error("Failed to compile shader patch, using normal pipeline to prevent errors", e);
+                return tryCompilePatchedOrNormal(builder, original, original);
+            } else {
+                throw e;
+            }
+        }
     }
 
     private void uploadUniformBuffer(MDICViewport viewport) {
@@ -114,28 +150,30 @@ public class MDICSectionRenderer extends AbstractSectionRenderer<MDICViewport, B
     }
 
 
-    private void bindRenderingBuffers(MDICViewport viewport, GlTexture depthBoundTexture) {
+    private void bindRenderingBuffers(MDICViewport viewport) {
         glBindBufferBase(GL_UNIFORM_BUFFER, 0, this.uniform.id);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, this.geometryManager.getGeometryBuffer().id);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, this.geometryManager.getMetadataBuffer().id);
         this.modelStore.bind(3, 4, 0);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, viewport.positionScratchBuffer.id);
         LightMapHelper.bind(1);
-        glBindTextureUnit(2, depthBoundTexture.id);
+        glBindTextureUnit(2, viewport.depthBoundingBuffer.getDepthTex().id);
 
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, SharedIndexBuffer.INSTANCE.id());
         glBindBuffer(GL_DRAW_INDIRECT_BUFFER, viewport.drawCallBuffer.id);
         glBindBuffer(GL_PARAMETER_BUFFER_ARB, viewport.drawCountCallBuffer.id);
     }
 
-    private void renderTerrain(MDICViewport viewport, GlTexture depthBoundTexture, long indirectOffset, long drawCountOffset, int maxDrawCount) {
+    private void renderTerrain(MDICViewport viewport, long indirectOffset, long drawCountOffset, int maxDrawCount) {
         //RenderLayer.getCutoutMipped().startDrawing();
+
 
         glDisable(GL_CULL_FACE);
         glEnable(GL_DEPTH_TEST);
         this.terrainShader.bind();
-        glBindVertexArray(RenderService.STATIC_VAO);//Needs to be before binding
-        this.bindRenderingBuffers(viewport, depthBoundTexture);
+        glBindVertexArray(GlVertexArray.STATIC_VAO);//Needs to be before binding
+        this.pipeline.setupAndBindOpaque(viewport);
+        this.bindRenderingBuffers(viewport);
 
         glMemoryBarrier(GL_COMMAND_BARRIER_BIT|GL_SHADER_STORAGE_BARRIER_BIT);//Barrier everything is needed
         glProvokingVertex(GL_FIRST_VERTEX_CONVENTION);
@@ -152,25 +190,27 @@ public class MDICSectionRenderer extends AbstractSectionRenderer<MDICViewport, B
     }
 
     @Override
-    public void renderOpaque(MDICViewport viewport, GlTexture dbt) {
+    public void renderOpaque(MDICViewport viewport) {
         if (this.geometryManager.getSectionCount() == 0) return;
 
         this.uploadUniformBuffer(viewport);
 
-        this.renderTerrain(viewport, dbt, 0, 4*3, Math.min((int)(this.geometryManager.getSectionCount()*4.4+128), 400_000));
+        this.renderTerrain(viewport, 0, 4*3, Math.min((int)(this.geometryManager.getSectionCount()*4.4+128), 400_000));
     }
 
     @Override
-    public void renderTranslucent(MDICViewport viewport, GlTexture depthBoundTexture) {
+    public void renderTranslucent(MDICViewport viewport) {
         if (this.geometryManager.getSectionCount() == 0) return;
+
         glEnable(GL_BLEND);
         glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
         glDisable(GL_CULL_FACE);
         glEnable(GL_DEPTH_TEST);
-        this.terrainShader.bind();
-        glBindVertexArray(RenderService.STATIC_VAO);//Needs to be before binding
-        this.bindRenderingBuffers(viewport, depthBoundTexture);
+        this.translucentTerrainShader.bind();
+        glBindVertexArray(GlVertexArray.STATIC_VAO);//Needs to be before binding
+        this.pipeline.setupAndBindTranslucent(viewport);
+        this.bindRenderingBuffers(viewport);
 
         glMemoryBarrier(GL_COMMAND_BARRIER_BIT|GL_SHADER_STORAGE_BARRIER_BIT);//Barrier everything is needed
         glProvokingVertex(GL_FIRST_VERTEX_CONVENTION);
@@ -209,7 +249,7 @@ public class MDICSectionRenderer extends AbstractSectionRenderer<MDICViewport, B
             if (Capabilities.INSTANCE.repFragTest) {
                 glEnable(GL_REPRESENTATIVE_FRAGMENT_TEST_NV);
             }
-            glBindVertexArray(RenderService.STATIC_VAO);
+            glBindVertexArray(GlVertexArray.STATIC_VAO);
             glBindBufferBase(GL_UNIFORM_BUFFER, 0, this.uniform.id);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, this.geometryManager.getMetadataBuffer().id);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, viewport.visibilityBuffer.id);
@@ -290,10 +330,10 @@ public class MDICSectionRenderer extends AbstractSectionRenderer<MDICViewport, B
     }
 
     @Override
-    public void renderTemporal(MDICViewport viewport, GlTexture dbt) {
+    public void renderTemporal(MDICViewport viewport) {
         if (this.geometryManager.getSectionCount() == 0) return;
         //Render temporal
-        this.renderTerrain(viewport, dbt, TEMPORAL_OFFSET*5*4, 4*5, Math.min(this.geometryManager.getSectionCount(), 100_000));
+        this.renderTerrain(viewport, TEMPORAL_OFFSET*5*4, 4*5, Math.min(this.geometryManager.getSectionCount(), 100_000));
     }
 
     @Override
@@ -309,6 +349,9 @@ public class MDICSectionRenderer extends AbstractSectionRenderer<MDICViewport, B
 
     @Override
     public void free() {
+        if (this.terrainShader != this.translucentTerrainShader) {
+            this.translucentTerrainShader.free();
+        }
         this.uniform.free();
         this.distanceCountBuffer.free();
         this.terrainShader.free();

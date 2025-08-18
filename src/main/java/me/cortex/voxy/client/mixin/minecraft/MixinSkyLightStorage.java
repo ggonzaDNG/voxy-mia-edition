@@ -19,4 +19,4 @@ public abstract class MixinSkyLightStorage {
                 cir.setReturnValue(0);
         }
     }
-}   
+}

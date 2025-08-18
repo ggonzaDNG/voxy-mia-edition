@@ -10,7 +10,6 @@ import net.minecraft.fluid.FluidState;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.RotationAxis;
 import net.minecraft.util.math.random.LocalRandom;
 import net.minecraft.world.BlockRenderView;
 import net.minecraft.world.LightType;
@@ -243,6 +242,7 @@ public class ModelTextureBakery {
             }
             glBindVertexArray(0);
         } else {//Is fluid, slow path :(
+
             if (!(state.getBlock() instanceof FluidBlock)) throw new IllegalStateException();
 
             var mat = new Matrix4f();
@@ -299,6 +299,7 @@ public class ModelTextureBakery {
 
             bbem.release();
         }
+
 
 
         //"Restore" gl state

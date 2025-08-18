@@ -8,11 +8,10 @@ import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.world.WorldEngine;
 import me.cortex.voxy.commonImpl.VoxyCommon;
 import me.cortex.voxy.commonImpl.WorldIdentifier;
-import net.minecraft.client.render.*;
-import net.minecraft.client.util.ObjectAllocator;
+import net.minecraft.client.render.Frustum;
+import net.minecraft.client.render.WorldRenderer;
 import net.minecraft.client.world.ClientWorld;
 import org.jetbrains.annotations.Nullable;
-import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
@@ -62,7 +61,7 @@ public abstract class MixinWorldRenderer implements IGetVoxyRenderSystem {
     @Override
     public void createRenderer() {
         if (this.renderer != null) throw new IllegalStateException("Cannot have multiple renderers");
-        if ((!VoxyConfig.CONFIG.enableRendering)||(!VoxyConfig.CONFIG.enabled)) {
+        if (!VoxyConfig.CONFIG.isRenderingEnabled()) {
             Logger.info("Not creating renderer due to disabled");
             return;
         }

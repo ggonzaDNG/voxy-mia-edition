@@ -1,7 +1,6 @@
 package me.cortex.voxy.client.core.rendering.section;
 
 
-import me.cortex.voxy.client.core.gl.GlTexture;
 import me.cortex.voxy.client.core.model.ModelStore;
 import me.cortex.voxy.client.core.rendering.Viewport;
 import me.cortex.voxy.client.core.rendering.section.geometry.IGeometryData;
@@ -17,10 +16,10 @@ public abstract class AbstractSectionRenderer <T extends Viewport<T>, J extends 
         this.modelStore = modelStore;
     }
 
-    public abstract void renderOpaque(T viewport, GlTexture depthBoundTexture);
+    public abstract void renderOpaque(T viewport);
     public abstract void buildDrawCalls(T viewport);
-    public abstract void renderTemporal(T viewport, GlTexture depthBoundTexture);
-    public abstract void renderTranslucent(T viewport, GlTexture depthBoundTexture);
+    public abstract void renderTemporal(T viewport);
+    public abstract void renderTranslucent(T viewport);
     public abstract T createViewport();
     public abstract void free();
 

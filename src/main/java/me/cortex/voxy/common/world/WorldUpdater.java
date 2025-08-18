@@ -2,7 +2,6 @@ package me.cortex.voxy.common.world;
 
 import me.cortex.voxy.common.voxelization.VoxelizedSection;
 import me.cortex.voxy.common.world.other.Mapper;
-
 import me.cortex.voxy.client.config.VoxyConfig;
 
 import static me.cortex.voxy.common.world.WorldEngine.*;

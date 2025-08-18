@@ -3,7 +3,6 @@ package me.cortex.voxy.common.world.other;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.config.IMappingStorage;
-import me.cortex.voxy.common.config.section.SectionStorage;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
@@ -21,7 +20,10 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
@@ -252,6 +254,7 @@ public class Mapper {
 
     //TODO: fixme: synchronize access to this.blockId2stateEntry
     public StateEntry[] getStateEntries() {
+        this.blockLock.lock();
         var set = new ArrayList<>(this.blockId2stateEntry);
         StateEntry[] out = new StateEntry[set.size()];
         int i = 0;
@@ -261,11 +264,13 @@ public class Mapper {
             }
             out[i-1] = entry;
         }
+        this.blockLock.unlock();
         return out;
     }
 
     //TODO: fixme: synchronize access to this.biomeId2biomeEntry
     public BiomeEntry[] getBiomeEntries() {
+        this.biomeLock.lock();
         var set = new ArrayList<>(this.biomeId2biomeEntry);
         BiomeEntry[] out = new BiomeEntry[set.size()];
         int i = 0;
@@ -275,6 +280,7 @@ public class Mapper {
             }
             out[i-1] = entry;
         }
+        this.biomeLock.unlock();
         return out;
     }
 

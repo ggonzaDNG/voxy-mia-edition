@@ -7,7 +7,7 @@
     "buildtime": "${buildtime}"
   },
   "name": "Voxy: Mine In Abyss Edition",
-  "description": "Far distance rendering mod utilising LoDs. Stack layers in the Mine in Abyss server.\n\nFor issues related with Mine in Abyss Edition, contact #realbreaded (godlaake) in the MIA discord server: https://discord.gg/Jsv2VnWd",
+  "description": "Far distance rendering mod utilising LoDs. Stack layers in the Mine in Abyss server.\n\nFor issues related with Mine in Abyss Edition, contact #realbreaded (godlaake) in the MIA discord server.",
   "authors": [
     "Cortex",
     "godlaake (MIA Edition)",

@@ -1,8 +1,6 @@
 package me.cortex.voxy.commonImpl;
 
 import me.cortex.voxy.common.world.WorldEngine;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.registry.Registries;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.util.Identifier;
@@ -11,7 +9,8 @@ import net.minecraft.world.dimension.DimensionType;
 import org.jetbrains.annotations.Nullable;
 
 import java.lang.ref.WeakReference;
-import java.util.Objects;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 public class WorldIdentifier {
     private static final RegistryKey<DimensionType> NULL_DIM_KEY = RegistryKey.of(RegistryKeys.DIMENSION_TYPE, Identifier.of("voxy:null_dimension_id"));
@@ -118,5 +117,32 @@ public class WorldIdentifier {
         int a = A==null?0:A.hashCode();
         int b = B==null?0:B.hashCode();
         return (Integer.toUnsignedLong(a)<<32)|Integer.toUnsignedLong(b);
+    }
+
+
+    private static String bytesToHex(byte[] hash) {
+        StringBuilder hexString = new StringBuilder(2 * hash.length);
+        for (byte b : hash) {
+            String hex = Integer.toHexString(0xff & b);
+            if (hex.length() == 1) {
+                hexString.append('0');
+            }
+            hexString.append(hex);
+        }
+        return hexString.toString();
+    }
+
+    public String getWorldId() {
+        return getWorldId(this);
+    }
+
+    public static String getWorldId(WorldIdentifier identifier) {
+        String data = identifier.biomeSeed + identifier.key.toString();
+        try {
+            return bytesToHex(MessageDigest.getInstance("SHA-256").digest(data.getBytes())).substring(0, 32);
+        } catch (
+                NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
+        }
     }
 }

@@ -7,8 +7,6 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.loader.api.ModContainer;
 
-import java.lang.invoke.VarHandle;
-
 public class VoxyCommon implements ModInitializer {
     public static final String MOD_VERSION;
     public static final boolean IS_DEDICATED_SERVER;
@@ -87,4 +85,7 @@ public class VoxyCommon implements ModInitializer {
     public static boolean isAvailable() {
         return FACTORY != null;
     }
+
+
+    public static final boolean IS_MINE_IN_ABYSS = false;
 }
