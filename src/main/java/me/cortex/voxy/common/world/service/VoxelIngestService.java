@@ -1,22 +1,25 @@
 package me.cortex.voxy.common.world.service;
 
 import me.cortex.voxy.common.Logger;
-import me.cortex.voxy.common.thread.ServiceSlice;
-import me.cortex.voxy.common.thread.ServiceThreadPool;
 import me.cortex.voxy.common.voxelization.ILightingSupplier;
 import me.cortex.voxy.common.voxelization.VoxelizedSection;
 import me.cortex.voxy.common.voxelization.WorldConversionFactory;
 import me.cortex.voxy.common.world.WorldEngine;
+import me.cortex.voxy.common.thread.ServiceSlice;
+import me.cortex.voxy.common.thread.ServiceThreadPool;
 import me.cortex.voxy.common.world.WorldUpdater;
 import me.cortex.voxy.commonImpl.VoxyCommon;
 import me.cortex.voxy.commonImpl.WorldIdentifier;
 import net.minecraft.util.math.ChunkSectionPos;
 import net.minecraft.world.LightType;
+import net.minecraft.world.chunk.Chunk;
 import net.minecraft.world.chunk.ChunkNibbleArray;
 import net.minecraft.world.chunk.ChunkSection;
 import net.minecraft.world.chunk.WorldChunk;
 import net.minecraft.world.chunk.light.LightStorage;
 import org.jetbrains.annotations.NotNull;
+
+import me.cortex.voxy.client.core.util.AbyssUtil;
 
 import java.util.concurrent.ConcurrentLinkedDeque;
 
@@ -52,29 +55,35 @@ public class VoxelIngestService {
 
     @NotNull
     private static ILightingSupplier getLightingSupplier(IngestSection task) {
-        ILightingSupplier supplier = (x,y,z) -> (byte) 0;
+        final int blockX = task.cx * 16;
+        final int sectionIndex = AbyssUtil.getSection(blockX);
+        
+        final boolean forceDark = sectionIndex > 3; 
+
+        ILightingSupplier supplier = (x, y, z) -> (byte) 0;
+
         var sla = task.skyLight;
         var bla = task.blockLight;
         boolean sl = sla != null && !sla.isUninitialized();
         boolean bl = bla != null && !bla.isUninitialized();
         if (sl || bl) {
             if (sl && bl) {
-                supplier = (x,y,z)-> {
-                    int block = Math.min(15,bla.get(x, y, z));
-                    int sky = Math.min(15,sla.get(x, y, z));
-                    return (byte) (sky|(block<<4));
+                supplier = (x, y, z) -> {
+                    int block = Math.min(15, bla.get(x, y, z));
+                    int sky = forceDark ? 0 : Math.min(15, sla.get(x, y, z));
+                    return (byte) (sky | (block << 4));
                 };
             } else if (bl) {
-                supplier = (x,y,z)-> {
-                    int block = Math.min(15,bla.get(x, y, z));
+                supplier = (x, y, z) -> {
+                    int block = Math.min(15, bla.get(x, y, z));
                     int sky = 0;
-                    return (byte) (sky|(block<<4));
+                    return (byte) (sky | (block << 4));
                 };
             } else {
-                supplier = (x,y,z)-> {
+                supplier = (x, y, z) -> {
                     int block = 0;
-                    int sky = Math.min(15,sla.get(x, y, z));
-                    return (byte) (sky|(block<<4));
+                    int sky = forceDark ? 0 : Math.min(15, sla.get(x, y, z));
+                    return (byte) (sky | (block << 4));
                 };
             }
         }
@@ -96,32 +105,14 @@ public class VoxelIngestService {
         boolean gotLighting = false;
 
         int i = chunk.getBottomSectionCoord() - 1;
-        boolean allEmpty = true;
         for (var section : chunk.getSectionArray()) {
             i++;
             if (section == null || !shouldIngestSection(section, chunk.getPos().x, i, chunk.getPos().z)) continue;
-            allEmpty&=section.isEmpty();
             //if (section.isEmpty()) continue;
             var pos = ChunkSectionPos.from(chunk.getPos(), i);
             if (lightingProvider.getStatus(LightType.SKY, pos) != LightStorage.Status.LIGHT_AND_DATA && lightingProvider.getStatus(LightType.BLOCK, pos) != LightStorage.Status.LIGHT_AND_DATA)
                 continue;
             gotLighting = true;
-        }
-
-        if (allEmpty&&!gotLighting) {
-            //Special case all empty chunk columns, we need to clear it out
-            i = chunk.getBottomSectionCoord() - 1;
-            for (var section : chunk.getSectionArray()) {
-                i++;
-                if (section == null || !shouldIngestSection(section, chunk.getPos().x, i, chunk.getPos().z)) continue;
-                this.ingestQueue.add(new IngestSection(chunk.getPos().x, i, chunk.getPos().z, engine, section, null, null));
-                try {
-                    this.threads.execute();
-                } catch (Exception e) {
-                    Logger.error("Executing had an error: assume shutting down, aborting",e);
-                    break;
-                }
-            }
         }
 
         if (!gotLighting) {

@@ -1,5 +1,7 @@
 package me.cortex.voxy.common.util;
 
+import java.lang.ref.Cleaner;
+
 import static me.cortex.voxy.common.util.GlobalCleaner.CLEANER;
 
 public class ThreadLocalMemoryBuffer {

@@ -2,8 +2,7 @@ struct BlockModel {
     uint faceData[6];
     uint flagsA;
     uint colourTint;
-    uint customId;
-    uint _pad[7];
+    uint _pad[8];
 };
 
 //TODO: FIXME: this isnt actually correct cause depending on the face (i think) it could be 1/64 th of a position off

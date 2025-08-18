@@ -13,7 +13,7 @@ import java.util.List;
 
 @Mixin(DebugHud.class)
 public class MixinDebugHud {
-    @Inject(method = "getRightText", at = @At("RETURN"))
+    @Inject(method = "getRightText", at = @At("TAIL"))
     private void injectDebug(CallbackInfoReturnable<List<String>> cir) {
         var ret = cir.getReturnValue();
         var instance = VoxyCommon.getInstance();
@@ -25,6 +25,21 @@ public class MixinDebugHud {
         var renderer = ((IGetVoxyRenderSystem) MinecraftClient.getInstance().worldRenderer).getVoxyRenderSystem();
         if (renderer != null) {
             renderer.addDebugInfo(ret);
+        }
+    }
+
+    @Inject(method = "getLeftText", at = @At("TAIL"))
+    private void injectDebugLeft(CallbackInfoReturnable<List<String>> cir) {
+        var ret = cir.getReturnValue();
+        var instance = VoxyCommon.getInstance();
+        if (instance != null) {
+            ret.add("");
+            ret.add("");
+            instance.addDebug(ret);
+        }
+        var renderer = ((IGetVoxyRenderSystem) MinecraftClient.getInstance().worldRenderer).getVoxyRenderSystem();
+        if (renderer != null) {
+            renderer.addDebugInfo_Abyss(ret);
         }
     }
 }

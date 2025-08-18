@@ -1,6 +1,8 @@
 package me.cortex.voxy.client;
 
+import me.cortex.voxy.client.taskbar.Taskbar;
 import me.cortex.voxy.common.Logger;
+import me.cortex.voxy.common.thread.ServiceThreadPool;
 import me.cortex.voxy.commonImpl.ImportManager;
 import me.cortex.voxy.commonImpl.importers.IDataImporter;
 import net.minecraft.client.MinecraftClient;
@@ -10,6 +12,7 @@ import net.minecraft.text.Text;
 import net.minecraft.util.math.MathHelper;
 
 import java.util.UUID;
+import java.util.function.BooleanSupplier;
 
 public class ClientImportManager extends ImportManager {
     protected class ClientImportTask extends ImportTask {

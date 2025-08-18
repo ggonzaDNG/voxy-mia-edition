@@ -1,7 +1,6 @@
 package me.cortex.voxy.client.core.model;
 
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
-import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import it.unimi.dsi.fastutil.objects.ObjectSet;
@@ -20,6 +19,7 @@ import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.color.block.BlockColorProvider;
 import net.minecraft.client.render.BlockRenderLayer;
+import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.RenderLayers;
 import net.minecraft.fluid.FluidState;
 import net.minecraft.registry.Registries;
@@ -41,6 +41,9 @@ import java.util.*;
 import static me.cortex.voxy.client.core.model.ModelStore.MODEL_SIZE;
 import static org.lwjgl.opengl.ARBDirectStateAccess.nglTextureSubImage2D;
 import static org.lwjgl.opengl.GL11.*;
+import static org.lwjgl.opengl.GL33.glDeleteSamplers;
+import static org.lwjgl.opengl.GL33.glGenSamplers;
+import static org.lwjgl.opengl.GL45C.glTextureSubImage2D;
 
 //Manages the storage and updating of model states, textures and colours
 
@@ -119,7 +122,6 @@ public class ModelFactory {
 
     public final Deque<Runnable> resultJobs = new ArrayDeque<>();
 
-    private Object2IntMap<BlockState> customBlockStateIdMapping;
 
     //TODO: NOTE!!! is it worth even uploading as a 16x16 texture, since automatic lod selection... doing 8x8 textures might be perfectly ok!!!
     // this _quarters_ the memory requirements for the texture atlas!!! WHICH IS HUGE saving
@@ -141,10 +143,6 @@ public class ModelFactory {
 
     public void tick() {
         this.downstream.tick();
-    }
-
-    public void setCustomBlockStateMapping(Object2IntMap<BlockState> mapping) {
-        this.customBlockStateIdMapping = mapping;
     }
 
     public boolean addEntry(int blockId) {
@@ -442,18 +440,17 @@ public class ModelFactory {
         modelFlags |= blockRenderLayer == BlockRenderLayer.CUTOUT?0:8;//Dont use mipmaps (AND ALSO FKING SPECIFIES IF IT HAS AO, WHY??? GREAT QUESTION, TODO FIXE THIS)
 
         //modelFlags |= blockRenderLayer == RenderLayer.getSolid()?0:1;// should discard alpha
-        MemoryUtil.memPutInt(uploadPtr, modelFlags); uploadPtr += 4;
-
+        MemoryUtil.memPutInt(uploadPtr, modelFlags);
 
         //Temporary override to always be non biome specific
         if (colourProvider == null) {
-            MemoryUtil.memPutInt(uploadPtr, -1);//Set the default to nothing so that its faster on the gpu
+            MemoryUtil.memPutInt(uploadPtr + 4, -1);//Set the default to nothing so that its faster on the gpu
         } else if (!isBiomeColourDependent) {
-            MemoryUtil.memPutInt(uploadPtr, captureColourConstant(colourProvider, blockState, DEFAULT_BIOME)|0xFF000000);
+            MemoryUtil.memPutInt(uploadPtr + 4, captureColourConstant(colourProvider, blockState, DEFAULT_BIOME)|0xFF000000);
         } else if (!this.biomes.isEmpty()) {
             //Populate the list of biomes for the model state
             int biomeIndex = this.modelsRequiringBiomeColours.size() * this.biomes.size();
-            MemoryUtil.memPutInt(uploadPtr, biomeIndex);
+            MemoryUtil.memPutInt(uploadPtr + 4, biomeIndex);
             this.modelsRequiringBiomeColours.add(new Pair<>(modelId, blockState));
             //NOTE: UploadStream.INSTANCE is called _after_ uploadPtr is finished being used, this is cause the upload pointer
             // may be invalidated as soon as another upload stream is invoked
@@ -462,22 +459,11 @@ public class ModelFactory {
                 MemoryUtil.memPutInt(clrUploadPtr, captureColourConstant(colourProvider, blockState, biome)|0xFF000000); clrUploadPtr += 4;
             }
         }
-        uploadPtr += 4;
-
-        //have 32 bytes of free space after here
-
-        //install the custom mapping id if it exists
-        if (this.customBlockStateIdMapping != null && this.customBlockStateIdMapping.containsKey(blockState)) {
-            MemoryUtil.memPutInt(uploadPtr, this.customBlockStateIdMapping.getInt(blockState));
-        } else {
-            MemoryUtil.memPutInt(uploadPtr, 0);
-        } uploadPtr += 4;
 
 
         //Note: if the layer isSolid then need to fill all the points in the texture where alpha == 0 with the average colour
         // of the surrounding blocks but only within the computed face size bounds
-
-        //TODO callback to inject extra data into the model data
+        //TODO
 
 
         this.putTextures(modelId, textureData);

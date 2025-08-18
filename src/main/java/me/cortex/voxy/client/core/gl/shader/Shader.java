@@ -1,6 +1,7 @@
 package me.cortex.voxy.client.core.gl.shader;
 
 import me.cortex.voxy.client.core.gl.Capabilities;
+import me.cortex.voxy.client.core.gl.GlBuffer;
 import me.cortex.voxy.client.core.gl.GlDebug;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.util.ThreadUtils;
@@ -75,13 +76,6 @@ public class Shader extends TrackedObject {
         private Builder(IShaderObjectConstructor<T> constructor, IShaderProcessor processor) {
             this.constructor = constructor;
             this.processor = processor;
-        }
-
-        public Builder<T> clone() {
-            var clone = new Builder<>(this.constructor, this.processor);
-            clone.defines.putAll(this.defines);
-            clone.sources.putAll(this.sources);
-            return clone;
         }
 
         public Builder<T> define(String name) {

@@ -131,9 +131,7 @@ public class HierarchicalOcclusionTraverser {
 
         //Use clear buffer, yes know is a bad idea, TODO: replace
         //Add the new top level node to the queue
-        MemoryUtil.memPutInt(SCRATCH, id);
-        nglClearNamedBufferSubData(this.topNodeIds.id, GL_R32UI, aid * 4L, 4, GL_RED_INTEGER, GL_UNSIGNED_INT, SCRATCH);
-
+        glClearNamedBufferSubData(this.topNodeIds.id, GL_R32UI, aid*4L, 4, GL_RED_INTEGER, GL_UNSIGNED_INT, new int[]{id});
         if (this.topNode2idxMapping.put(id, aid) != -1) {
             throw new IllegalStateException();
         }
@@ -160,10 +158,8 @@ public class HierarchicalOcclusionTraverser {
         this.idx2topNodeMapping[idx] = endTLNId;//Set the old to the new
         if (this.topNode2idxMapping.put(endTLNId, idx) == -1)
             throw new IllegalStateException();
-
         //Move it server side, from end to new idx
-        MemoryUtil.memPutInt(SCRATCH, endTLNId);
-        nglClearNamedBufferSubData(this.topNodeIds.id, GL_R32UI, idx*4L, 4, GL_RED_INTEGER, GL_UNSIGNED_INT, SCRATCH);
+        glClearNamedBufferSubData(this.topNodeIds.id, GL_R32UI, idx*4L, 4, GL_RED_INTEGER, GL_UNSIGNED_INT, new int[]{endTLNId});
     }
 
     private static void setFrustum(Viewport<?> viewport, long ptr) {
@@ -325,7 +321,7 @@ public class HierarchicalOcclusionTraverser {
     private void forwardDownloadResult(long ptr, long size) {
         int count = MemoryUtil.memGetInt(ptr);ptr += 8;//its 8 since we need to skip the second value (which is empty)
         if (count < 0 || count > 50000) {
-            Logger.error(new IllegalStateException("Count unexpected extreme value: " + count + " things may get weird"));
+            Logger.error(new IllegalStateException("Count unexpected extreme value: " + count));
             return;
         }
         if (count > (this.requestBuffer.size()>>3)-1) {
@@ -363,6 +359,4 @@ public class HierarchicalOcclusionTraverser {
         this.scratchQueueB.free();
         glDeleteSamplers(this.hizSampler);
     }
-
-    private static final long SCRATCH = MemoryUtil.nmemAlloc(32);//32 bytes of scratch memory
 }

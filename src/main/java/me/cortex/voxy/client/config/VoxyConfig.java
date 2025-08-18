@@ -34,6 +34,8 @@ public class VoxyConfig implements OptionStorage<VoxyConfig> {
     public boolean useEnvironmentalFog = false;
     public boolean renderStatistics = false;
 
+    public boolean stackLayers = true;
+
     public static VoxyConfig loadOrCreate() {
         if (VoxyCommon.isAvailable()) {
             var path = getConfigPath();
@@ -78,9 +80,5 @@ public class VoxyConfig implements OptionStorage<VoxyConfig> {
     @Override
     public VoxyConfig getData() {
         return this;
-    }
-
-    public boolean isRenderingEnabled() {
-        return VoxyCommon.isAvailable() && this.enabled && this.enableRendering;
     }
 }

@@ -1,6 +1,7 @@
 package me.cortex.voxy.client.core.model;
 
 import net.caffeinemc.mods.sodium.client.util.color.ColorSRGB;
+import net.minecraft.util.math.ColorHelper;
 
 //Texturing utils to manipulate data from the model bakery
 public class TextureUtils {
