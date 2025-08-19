@@ -1,5 +1,6 @@
 package me.cortex.voxy.client;
 
+import me.cortex.voxy.client.compat.FlashbackCompat;
 import me.cortex.voxy.client.config.VoxyConfig;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.config.ConfigBuildCtx;
@@ -23,15 +24,18 @@ public class VoxyClientInstance extends VoxyInstance {
     public static boolean isInGame = false;
 
     private final SectionStorageConfig storageConfig;
-    private final Path basePath = getBasePath();
+    private final Path basePath;
+    private final boolean noIngestOverride;
+
     public VoxyClientInstance() {
         super(VoxyConfig.CONFIG.serviceThreads);
-        try {
-            Files.createDirectories(this.basePath);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
+        var path = FlashbackCompat.getReplayStoragePath();
+        this.noIngestOverride = path != null;
+        if (path == null) {
+            path = getBasePath();
         }
-        this.storageConfig = getCreateStorageConfig(this.basePath);
+        this.basePath = path;
+        this.storageConfig = getCreateStorageConfig(path);
     }
 
     @Override
@@ -48,7 +52,12 @@ public class VoxyClientInstance extends VoxyInstance {
         return this.storageConfig.build(ctx);
     }
 
-    private static SectionStorageConfig getCreateStorageConfig(Path path) {
+    public static SectionStorageConfig getCreateStorageConfig(Path path) {
+        try {
+            Files.createDirectories(path);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
         var json = path.resolve("config.json");
         Config config = null;
         if (Files.exists(json)) {
@@ -106,6 +115,10 @@ public class VoxyClientInstance extends VoxyInstance {
         DEFAULT_STORAGE_CONFIG = config;
     }
 
+    public Path getStorageBasePath() {
+        return this.basePath;
+    }
+
     private static Path getBasePath() {
         Path basePath = MinecraftClient.getInstance().runDirectory.toPath().resolve(".voxy").resolve("saves");
         var iserver = MinecraftClient.getInstance().getServer();
@@ -131,5 +144,10 @@ public class VoxyClientInstance extends VoxyInstance {
             }
         }
         return basePath.toAbsolutePath();
+    }
+
+    @Override
+    public boolean isIngestEnabled(WorldIdentifier worldId) {
+        return !this.noIngestOverride;
     }
 }

@@ -184,6 +184,7 @@ public class VoxelIngestService {
         if (worldId == null) return false;
         var instance = VoxyCommon.getInstance();
         if (instance == null) return false;
+        if (!instance.isIngestEnabled(worldId)) return false;
         var engine = instance.getOrCreate(worldId);
         if (engine == null) return false;
         instance.getIngestService().enqueueIngest(engine, chunk);

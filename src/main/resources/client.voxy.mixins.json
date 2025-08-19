@@ -27,7 +27,9 @@
     "sodium.MixinRenderSectionManager",
     "sodium.MixinSodiumOptionsGUI",
     "minecraft.MixinSkyLightStorage",
-    "minecraft.MixinLightTextureManager"
+    "minecraft.MixinLightTextureManager",
+    "flashback.MixinFlashbackMeta",
+    "flashback.MixinFlashbackRecorder"    
   ],
   "injectors": {
     "defaultRequire": 1
