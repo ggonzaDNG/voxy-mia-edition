@@ -90,7 +90,7 @@ public class IrisVoxyRenderPipeline extends AbstractRenderPipeline {
     }
 
     @Override
-    protected int setup(Viewport<?> viewport, int sourceFramebuffer) {
+    protected int setup(Viewport<?> viewport, int sourceFramebuffer, int srcWidth, int srcHeight) {
         if (this.shaderUniforms != null) {
             //Update the uniforms
             long ptr = UploadStream.INSTANCE.uploadTo(this.shaderUniforms);
@@ -109,7 +109,11 @@ public class IrisVoxyRenderPipeline extends AbstractRenderPipeline {
             glClear(GL_COLOR_BUFFER_BIT);
         }
 
-        this.initDepthStencil(sourceFramebuffer, this.fb.framebuffer.id, viewport.width, viewport.height);
+        if (this.data.useViewportDims) {
+            srcWidth = viewport.width;
+            srcHeight = viewport.height;
+        }
+        this.initDepthStencil(sourceFramebuffer, this.fb.framebuffer.id, srcWidth, srcHeight, viewport.width, viewport.height);
         return this.fb.getDepthTex().id;
     }
 
@@ -129,12 +133,14 @@ public class IrisVoxyRenderPipeline extends AbstractRenderPipeline {
     }
 
     @Override
-    protected void finish(Viewport<?> viewport, int sourceFrameBuffer) {
-        glColorMask(false, false, false, false);
-        AbstractRenderPipeline.transformBlitDepth(this.depthBlit,
-                this.fbTranslucent.getDepthTex().id, sourceFrameBuffer,
-                viewport, new Matrix4f(viewport.vanillaProjection).mul(viewport.modelView));
-        glColorMask(true, true, true, true);
+    protected void finish(Viewport<?> viewport, int sourceFrameBuffer, int srcWidth, int srcHeight) {
+        if (this.data.renderToVanillaDepth && srcWidth == viewport.width  && srcHeight == viewport.height) {//We can only depthblit out if destination size is the same
+            glColorMask(false, false, false, false);
+            AbstractRenderPipeline.transformBlitDepth(this.depthBlit,
+                    this.fbTranslucent.getDepthTex().id, sourceFrameBuffer,
+                    viewport, new Matrix4f(viewport.vanillaProjection).mul(viewport.modelView));
+            glColorMask(true, true, true, true);
+        }
     }
 
 
@@ -170,12 +176,13 @@ public class IrisVoxyRenderPipeline extends AbstractRenderPipeline {
         super.addDebug(debug);
     }
 
+    private static final int UNIFORM_BINDING_POINT = 5;//TODO make ths binding point... not randomly 5
+
     private StringBuilder buildGenericShaderHeader(AbstractSectionRenderer<?, ?> renderer, String input) {
         StringBuilder builder = new StringBuilder(input).append("\n\n\n");
 
         if (this.data.getUniforms() != null) {
-            //TODO make ths binding point... not randomly 5
-            builder.append("layout(binding = 5, std140) uniform ShaderUniformBindings ")
+            builder.append("layout(binding = "+UNIFORM_BINDING_POINT+", std140) uniform ShaderUniformBindings ")
                     .append(this.data.getUniforms().layout())
                     .append(";\n\n");
         }
@@ -193,6 +200,8 @@ public class IrisVoxyRenderPipeline extends AbstractRenderPipeline {
         return builder.append("\n\n");
     }
 
+
+
     @Override
     public String patchOpaqueShader(AbstractSectionRenderer<?, ?> renderer, String input) {
         var builder = this.buildGenericShaderHeader(renderer, input);
@@ -209,5 +218,26 @@ public class IrisVoxyRenderPipeline extends AbstractRenderPipeline {
         var builder = this.buildGenericShaderHeader(renderer, input);
         builder.append(this.data.translucentFragPatch());
         return builder.toString();
+    }
+
+    @Override
+    public String taaFunction(AbstractSectionRenderer<?, ?> renderer, String functionName) {
+        var builder = new StringBuilder();
+
+        if (this.data.getUniforms() != null) {
+            builder.append("layout(binding = "+UNIFORM_BINDING_POINT+", std140) uniform ShaderUniformBindings ")
+                    .append(this.data.getUniforms().layout())
+                    .append(";\n\n");
+        }
+
+        builder.append("vec2 ").append(functionName).append("()\n");
+        builder.append(this.data.TAA);
+        builder.append("\n");
+        return builder.toString();
+    }
+
+    @Override
+    public float[] getRenderScalingFactor() {
+        return this.data.resolutionScale;
     }
 }

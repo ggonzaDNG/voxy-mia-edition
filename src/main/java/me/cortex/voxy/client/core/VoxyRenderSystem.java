@@ -153,7 +153,8 @@ public class VoxyRenderSystem {
 
 
     public Viewport<?> setupViewport(ChunkRenderMatrices matrices, FogParameters fogParameters, double cameraX, double cameraY, double cameraZ) {
-        if (IrisUtil.irisShadowActive()) {
+        var viewport = this.getViewport();
+        if (viewport == null) {
             return null;
         }
 
@@ -172,13 +173,23 @@ public class VoxyRenderSystem {
         int[] dims = new int[4];
         glGetIntegerv(GL_VIEWPORT, dims);
 
-        var viewport = this.getViewport();
+        int width = dims[2];
+        int height = dims[3];
+
+        {//Apply render scaling factor
+            var factor = this.pipeline.getRenderScalingFactor();
+            if (factor != null) {
+                width = (int) (width*factor[0]);
+                height = (int) (height*factor[1]);
+            }
+        }
+
         viewport
                 .setVanillaProjection(matrices.projection())
                 .setProjection(projection)
                 .setModelView(new Matrix4f(matrices.modelView()))
                 .setCamera(cameraX, cameraY, cameraZ)
-                .setScreenSize(dims[2], dims[3])
+                .setScreenSize(width, height)
                 .setFogParameters(fogParameters)
                 .update();
         viewport.frameId++;
@@ -207,6 +218,11 @@ public class VoxyRenderSystem {
         int oldFB = GL11.glGetInteger(GL_DRAW_FRAMEBUFFER_BINDING);
         int boundFB = oldFB;
 
+        int[] dims = new int[4];
+        glGetIntegerv(GL_VIEWPORT, dims);
+
+        glViewport(0,0, viewport.width, viewport.height);
+
         //var target = DefaultTerrainRenderPasses.CUTOUT.getTarget();
         //boundFB = ((net.minecraft.client.texture.GlTexture) target.getColorAttachment()).getOrCreateFramebuffer(((GlBackend) RenderSystem.getDevice()).getFramebufferManager(), target.getDepthAttachment());
         if (boundFB == 0) {
@@ -226,7 +242,7 @@ public class VoxyRenderSystem {
 
 
         //The entire rendering pipeline (excluding the chunkbound thing)
-        this.pipeline.runPipeline(viewport, boundFB);
+        this.pipeline.runPipeline(viewport, boundFB, dims[2], dims[3]);
 
 
         TimingStatistics.main.stop();
@@ -247,6 +263,7 @@ public class VoxyRenderSystem {
         TimingStatistics.postDynamic.stop();
 
         glBindFramebuffer(GlConst.GL_FRAMEBUFFER, oldFB);
+        glViewport(dims[0], dims[1], dims[2], dims[3]);
 
         {//Reset state manager stuffs
             glUseProgram(0);
@@ -356,6 +373,9 @@ public class VoxyRenderSystem {
     }
 
     public Viewport<?> getViewport() {
+        if (IrisUtil.irisShadowActive()) {
+            return null;
+        }
         return this.viewportSelector.getViewport();
     }
 

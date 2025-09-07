@@ -46,6 +46,11 @@ public class IrisVoxyRenderPipelineData {
     private final Runnable blendingSetup;
     private final ImageSet imageSet;
     private final SSBOSet ssboSet;
+    public final boolean renderToVanillaDepth;
+    public final float[] resolutionScale;
+    public final String TAA;
+    public final boolean useViewportDims;
+
     private IrisVoxyRenderPipelineData(IrisShaderPatch patch, int[] opaqueDrawTargets, int[] translucentDrawTargets, StructLayout uniformSet, Runnable blendingSetup, ImageSet imageSet, SSBOSet ssboSet) {
         this.opaqueDrawTargets = opaqueDrawTargets;
         this.translucentDrawTargets = translucentDrawTargets;
@@ -55,6 +60,10 @@ public class IrisVoxyRenderPipelineData {
         this.blendingSetup = blendingSetup;
         this.imageSet = imageSet;
         this.ssboSet = ssboSet;
+        this.renderToVanillaDepth = patch.emitToVanillaDepth();
+        this.TAA = patch.getTAAShift();
+        this.resolutionScale = patch.getRenderScale();
+        this.useViewportDims = patch.useViewportDims();
     }
 
     public SSBOSet getSsboSet() {
@@ -311,7 +320,8 @@ public class IrisVoxyRenderPipelineData {
 
     }
     private static ImageSet createImageSet(IrisRenderingPipeline ipipe, IrisShaderPatch patch) {
-        Set<String> samplerNameSet = new LinkedHashSet<>(List.of(patch.getSamplerList()));
+        var samplerDataSet = patch.getSamplerSet();
+        Set<String> samplerNameSet = new LinkedHashSet<>(samplerDataSet.keySet());
         if (samplerNameSet.isEmpty()) return null;
         Set<TextureWSampler> samplerSet = new LinkedHashSet<>();
         SamplerHolder samplerBuilder = new SamplerHolder() {
@@ -387,11 +397,7 @@ public class IrisVoxyRenderPipelineData {
         for (var entry : samplerSet) {
             samplers[i]=entry;
 
-            String samplerType = "sampler2D";
-            if (entry.name.startsWith("shadowtex")) {
-                samplerType = "sampler2DShadow";
-            }
-
+            String samplerType = samplerDataSet.get(entry.name);
             builder.append("layout(binding=(BASE_SAMPLER_BINDING_INDEX+").append(i).append(")) uniform ").append(samplerType).append(" ").append(entry.name).append(";\n");
             i++;
         }
@@ -413,6 +419,7 @@ public class IrisVoxyRenderPipelineData {
     public record SSBOSet(String layout, IntConsumer bindingFunction){}
     private record SSBOBinding(int irisIndex, int bindingOffset) {}
     private static SSBOSet createSSBOLayouts(Int2ObjectMap<String> ssbos, ShaderStorageBufferHolder ssboStore) {
+        if (ssboStore == null) return null;//If there is no store, there cannot be any ssbos
         if (ssbos.isEmpty()) return null;
         String header = "";
         if (ssbos.containsKey(-1)) header = ssbos.remove(-1);
