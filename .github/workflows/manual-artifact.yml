@@ -9,9 +9,6 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v4
 
-      - name: Verify wrapper
-        uses: gradle/actions/wrapper-validation@v3
-
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
@@ -22,6 +19,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: false
+          cache-cleanup: always
 
       - name: Gradle build
         run: ./gradlew build

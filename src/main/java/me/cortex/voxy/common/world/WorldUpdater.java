@@ -104,7 +104,7 @@ public class WorldUpdater {
                 //Bitmask of neighboring sections
                 //Note, this may be zero (this is more likely to occure at higher lod levels) if it doesnt face any neighbors
                 int neighbors = 0;
-                {
+                if (didStateChange) {
                     neighbors |= ((section.y^(section.y-1))>>(lvl+1))==0?0:1<<0;//Down
                     neighbors |= ((section.y^(section.y+1))>>(lvl+1))==0?0:1<<1;//Up
                     neighbors |= ((section.x^(section.x-1))>>(lvl+1))==0?0:1<<2;//-x
@@ -113,7 +113,7 @@ public class WorldUpdater {
                     neighbors |= ((section.z^(section.z+1))>>(lvl+1))==0?0:1<<5;//+z
                 }
 
-                into.markDirty(worldSection, (didStateChange?UPDATE_TYPE_BLOCK_BIT:0)|(emptinessStateChange!=0?UPDATE_TYPE_CHILD_EXISTENCE_BIT:0));
+                into.markDirty(worldSection, (didStateChange?UPDATE_TYPE_BLOCK_BIT:0)|(emptinessStateChange!=0?UPDATE_TYPE_CHILD_EXISTENCE_BIT:0), neighbors);
             }
 
             //Need to release the section after using it
