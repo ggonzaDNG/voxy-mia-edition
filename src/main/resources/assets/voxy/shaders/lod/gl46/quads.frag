@@ -39,8 +39,8 @@ bool useMipmaps() {
     return (interData.x&2u)==0u;
 }
 
-bool useTinting() {
-    return (interData.x&4u)!=0u;
+uint tintingState() {
+    return (interData.x>>2)&3u;
 }
 
 bool useCutout() {
@@ -91,12 +91,18 @@ void voxy_emitFragment(VoxyFragmentParameters parameters);
 #else
 
 vec4 computeColour(vec2 texturePos, vec4 colour) {
-    //Conditional tinting, TODO: FIXME: REPLACE WITH MASK OR SOMETHING, like encode data into the top bit of alpha
-    if (useTinting()) {
+    //Conditional tinting, TODO: FIXME: this is better but still not great, try encode data into the top bit of alpha so its per pixel
+
+    uint tintingFunction = tintingState();
+    bool doTint = tintingFunction==2;//Always tint if function == 2
+    if (tintingFunction == 1) {//partial tint
         vec4 tintTest = textureLod(blockModelAtlas, texturePos, 0);
         if (abs(tintTest.r-tintTest.g) < 0.02f && abs(tintTest.g-tintTest.b) < 0.02f) {
-            colour *= uint2vec4RGBA(interData.z).yzwx;
+            doTint = true;
         }
+    }
+    if (doTint) {
+        colour *= uint2vec4RGBA(interData.z).yzwx;
     }
     return (colour * uint2vec4RGBA(interData.y)) + vec4(0,0,0,float(interData.w&0xFFu)/255);
 }
@@ -105,6 +111,7 @@ vec4 computeColour(vec2 texturePos, vec4 colour) {
 
 
 void main() {
+    //vec2 uv = vec2(0);
     //Tile is the tile we are in
     vec2 tile;
     vec2 uv2 = modf(uv, tile)*(1.0/(vec2(3.0,2.0)*256.0));
@@ -132,11 +139,13 @@ void main() {
 
     if (any(notEqual(clamp(tile, vec2(0), vec2((interData.x>>8)&0xFu, (interData.x>>12)&0xFu)), tile))) {
         discard;
+        return;
     }
 
     //Check the minimum bounding texture and ensure we are greater than it
     if (gl_FragCoord.z < texelFetch(depthTex, ivec2(gl_FragCoord.xy), 0).r) {
         discard;
+        return;
     }
 
 
@@ -146,8 +155,15 @@ void main() {
         //TODO: FIXME, basicly what this do is sample the exact pixel (no lod) for discarding, this stops mipmapping fucking it over
         #ifndef DEBUG_RENDER
         discard;
+        return;
         #endif
     }
+
+    #ifndef PATCHED_SHADER_ALLOW_DERIVATIVES
+    if (gl_HelperInvocation) {
+        return;
+    }
+    #endif
 
     #ifndef PATCHED_SHADER
     colour = computeColour(texPos, colour);
@@ -165,12 +181,17 @@ void main() {
     #else
     uint modelId = getModelId();
     BlockModel model = modelData[modelId];
-    vec4 tint = vec4(1);
-    if (useTinting()) {
+    uint tintingFunction = tintingState();
+    bool doTint = tintingFunction==2;//Always tint if function == 2
+    if (tintingFunction==1) {//Partial tint
         vec4 tintTest = texture(blockModelAtlas, texPos, -2);
         if (abs(tintTest.r-tintTest.g) < 0.02f && abs(tintTest.g-tintTest.b) < 0.02f) {
-            tint = uint2vec4RGBA(interData.z).yzwx;
+            doTint = true;
         }
+    }
+    vec4 tint = vec4(1);
+    if (doTint) {
+        tint = uint2vec4RGBA(interData.z).yzwx;
     }
 
     voxy_emitFragment(VoxyFragmentParameters(colour, tile, texPos, getFace(), modelId, getLightmap().yx, tint, model.customId));

@@ -139,13 +139,16 @@ void main() {
 
         //Apply model colour tinting
         uint tintColour = model.colourTint;
+
         if (modelHasBiomeLUT(model)) {
             tintColour = colourData[tintColour + extractBiomeId(quad)];
         }
 
+        uint tintState = faceTintState(faceData);
+
         uint conditionalTinting = 0;
         if (tintColour != uint(-1)) {
-            flags |= 1u<<2;
+            flags |= tintState<<2;
             conditionalTinting = tintColour;
         }
 
@@ -164,6 +167,21 @@ void main() {
         }
 
         //Apply face tint
+        #ifdef DARKENED_TINTING
+        if (isShaded) {
+            //TODO: make branchless, infact apply ahead of time to the texture itself in ModelManager since that is
+            // per face
+            if ((face>>1) == 1) {//NORTH, SOUTH
+                tinting.xyz *= 0.8f;
+            } else if ((face>>1) == 2) {//EAST, WEST
+                tinting.xyz *= 0.6f;
+            } else {//UP DOWN
+                tinting.xyz *= 0.9f;
+            }
+        } else {
+            tinting.xyz *= 0.9f;
+        }
+        #else
         if (isShaded) {
             //TODO: make branchless, infact apply ahead of time to the texture itself in ModelManager since that is
             // per face
@@ -175,6 +193,7 @@ void main() {
                 tinting.xyz *= 0.5f;
             }
         }
+        #endif
 
         setTintingAndExtra(tinting, conditionalTinting, addin|(face<<8));
         #else

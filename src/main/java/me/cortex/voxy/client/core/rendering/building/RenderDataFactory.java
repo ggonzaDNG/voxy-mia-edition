@@ -18,7 +18,7 @@ import java.util.Arrays;
 
 public class RenderDataFactory {
     private static final boolean CHECK_NEIGHBOR_FACE_OCCLUSION = true;
-    private static final boolean DISABLE_CULL_SAME_OCCLUDES = true;
+    private static final boolean DISABLE_CULL_SAME_OCCLUDES = false;//TODO: FIX TRANSLUCENTS (e.g. stained glass) breaking on chunk boarders with this set to false (it might be something else????)
 
     private static final boolean VERIFY_MESHING = VoxyCommon.isVerificationFlagOn("verifyMeshing");
 
@@ -341,7 +341,7 @@ public class RenderDataFactory {
     private static final long LM = (0xFFL<<55);
 
     private static boolean shouldMeshNonOpaqueBlockFace(int face, long quad, long meta, long neighborQuad, long neighborMeta) {
-        if (((quad^neighborQuad)&(0xFFFFL<<26))==0 && (DISABLE_CULL_SAME_OCCLUDES || ModelQueries.faceOccludes(meta, face))) return false;//This is a hack, if the neigbor and this are the same, dont mesh the face// TODO: FIXME
+        if (((quad^neighborQuad)&(0xFFFFL<<26))==0 && (DISABLE_CULL_SAME_OCCLUDES || (ModelQueries.cullsSame(meta)||ModelQueries.faceOccludes(meta, face)))) return false;//This is a hack, if the neigbor and this are the same, dont mesh the face// TODO: FIXME
         if (!ModelQueries.faceExists(meta, face)) return false;//Dont mesh if no face
         //if (ModelQueries.faceCanBeOccluded(meta, face)) //TODO: maybe enable this
             if (ModelQueries.faceOccludes(neighborMeta, face^1)) return false;
@@ -397,16 +397,21 @@ public class RenderDataFactory {
                         int iA = idx * 2 + (facingForward == 1 ? 0 : shift);
                         int iB = idx * 2 + (facingForward == 1 ? shift : 0);
 
+                        long selfModel = this.sectionData[iA];
+                        long nextModel = this.sectionData[iB];
+
                         //Check if next culls this face
                         if (CHECK_NEIGHBOR_FACE_OCCLUSION) {
-                            if (ModelQueries.faceOccludes(this.sectionData[iB + 1], (axis << 1) | (1 - facingForward))) {
+                            long neighbor = this.sectionData[iB + 1];
+                            boolean culls = false;
+                            culls |= ((selfModel^nextModel)&(0xFFFFL<<26))==0&&ModelQueries.cullsSame(neighbor);
+                            culls |= ModelQueries.faceOccludes(neighbor, (axis << 1) | (1 - facingForward));
+                            if (culls) {
                                 this.blockMesher.skip(1);
                                 continue;
                             }
                         }
 
-                        long selfModel = this.sectionData[iA];
-                        long nextModel = this.sectionData[iB];
                         this.blockMesher.putNext(((long) facingForward) |//Facing
                                 (selfModel&~LM) |
                                 (nextModel&LM)//Apply lighting
@@ -452,8 +457,10 @@ public class RenderDataFactory {
 
                         int neighborIdx = ((axis+1)*32*32 * 2)+(side)*32*32;
                         long neighborId = this.neighboringFaces[neighborIdx + (other*32) + index];
+                        long A = this.sectionData[idx * 2];
 
-                        if (Mapper.getBlockId(neighborId) != 0) {//Not air
+                        int nib = Mapper.getBlockId(neighborId);
+                        if (nib != 0) {//Not air
                             long meta = this.modelMan.getModelMetadataFromClientId(this.modelMan.getModelId(Mapper.getBlockId(neighborId)));
                             if (ModelQueries.isFullyOpaque(meta)) {//Dont mesh this face
                                 this.blockMesher.skip(1);
@@ -463,7 +470,10 @@ public class RenderDataFactory {
                             //This very funnily causes issues when not combined with meshing non full opaque geometry
                             //TODO:FIXME, when non opaque geometry is added
                             if (CHECK_NEIGHBOR_FACE_OCCLUSION) {
-                                if (ModelQueries.faceOccludes(meta, (axis << 1) | (1 - side))) {
+                                boolean culls = false;
+                                culls |= nib==((A>>26)&0xFFFF)&&ModelQueries.cullsSame(meta);
+                                culls |= ModelQueries.faceOccludes(meta, (axis << 1) | (1 - side));
+                                if (culls) {
                                     this.blockMesher.skip(1);
                                     continue;
                                 }
@@ -471,7 +481,6 @@ public class RenderDataFactory {
                         }
 
 
-                        long A = this.sectionData[idx * 2];
 
                         this.blockMesher.putNext(((side == 0) ? 0L : 1L) |
                                 (A&~LM) |
@@ -531,7 +540,7 @@ public class RenderDataFactory {
                         int bi = facingForward == 1 ? b : a;
 
                         //TODO: check if must cull against next entries face
-                        if (CHECK_NEIGHBOR_FACE_OCCLUSION) {
+                        if (CHECK_NEIGHBOR_FACE_OCCLUSION) {//TODO:SELF OCCLUSION
                             if (ModelQueries.faceOccludes(this.sectionData[bi + 1], (axis << 1) | (1 - facingForward))) {
                                 this.blockMesher.skip(1);
                                 continue;
@@ -754,6 +763,7 @@ public class RenderDataFactory {
                         if (Mapper.getBlockId(neighborId) != 0) {//Not air
                             int modelId = this.modelMan.getModelId(Mapper.getBlockId(neighborId));
                             if (modelId == ((A>>26)&0xFFFF)) {//TODO: FIXME, this technically isnt correct as need to check self occulsion, thinks?
+                                //TODO: check self occlsuion in the if statment
                                 fail = true;
                             } else {
                                 long meta = this.modelMan.getModelMetadataFromClientId(modelId);
@@ -768,6 +778,7 @@ public class RenderDataFactory {
                         long nB = this.sectionData[(idx+skipAmount) * 2 + 1];
                         boolean failB = false;
                         if ((nA&(0xFFFFL<<26)) == (A&(0xFFFFL<<26))) {//TODO: FIXME, this technically isnt correct as need to check self occulsion, thinks?
+                            //TODO: check self occlsuion in the if statment
                             failB = true;
                         } else {
                             if (ModelQueries.faceOccludes(nB, (axis << 1) | (side))) {
@@ -930,6 +941,7 @@ public class RenderDataFactory {
 
                         //Check if next culls this face
                         if (CHECK_NEIGHBOR_FACE_OCCLUSION) {
+                            //TODO: check self occlsuion
                             if (ModelQueries.faceOccludes(this.sectionData[iB + 1], (2 << 1) | (1 - facingForward))) {
                                 mesher.skip(1);
                                 continue;
@@ -996,6 +1008,7 @@ public class RenderDataFactory {
                         if (ModelQueries.isFullyOpaque(meta)) {
                             oki = false;
                         } else if (CHECK_NEIGHBOR_FACE_OCCLUSION && ModelQueries.faceOccludes(meta, (2 << 1) | (1 - 1))) {
+                            //TODO check self occlsion
                             oki = false;
                         }
                     }
@@ -1017,6 +1030,7 @@ public class RenderDataFactory {
                         if (ModelQueries.isFullyOpaque(meta)) {
                             oki = false;
                         } else if (CHECK_NEIGHBOR_FACE_OCCLUSION && ModelQueries.faceOccludes(meta, (2 << 1) | (1 - 0))) {
+                            //TODO check self occlsion
                             oki = false;
                         }
                     }
@@ -1122,7 +1136,8 @@ public class RenderDataFactory {
 
                         if (CHECK_NEIGHBOR_FACE_OCCLUSION) {
                             if (ModelQueries.faceOccludes(this.sectionData[bi + 1], (2 << 1) | (1 - facingForward))) {
-                                this.blockMesher.skip(1);
+                                //TODO check self occlsion
+                                mesher.skip(1);
                                 continue;
                             }
                         }
@@ -1591,7 +1606,9 @@ public class RenderDataFactory {
         if (neighborMsk>>31!=0) {//We failed to get everything so throw exception
             throw new IdNotYetComputedException(neighborMsk&(~(1<<31)), true);
         }
-        this.acquireNeighborData(section, neighborMsk);
+        if (CHECK_NEIGHBOR_FACE_OCCLUSION) {
+            this.acquireNeighborData(section, neighborMsk);
+        }
 
         try {
             this.generateYZFaces();

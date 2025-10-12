@@ -16,9 +16,10 @@ public class WorldEngine {
 
     public static final int UPDATE_TYPE_BLOCK_BIT = 1;
     public static final int UPDATE_TYPE_CHILD_EXISTENCE_BIT = 2;
-    public static final int UPDATE_FLAGS = UPDATE_TYPE_BLOCK_BIT | UPDATE_TYPE_CHILD_EXISTENCE_BIT;
+    public static final int UPDATE_TYPE_DONT_SAVE = 4;
+    public static final int DEFAULT_UPDATE_FLAGS = UPDATE_TYPE_BLOCK_BIT | UPDATE_TYPE_CHILD_EXISTENCE_BIT;
 
-    public interface ISectionChangeCallback {void accept(WorldSection section, int updateFlags);}
+    public interface ISectionChangeCallback {void accept(WorldSection section, int updateFlags, int neighborMsk);}
     public interface ISectionSaveCallback {void save(WorldEngine engine, WorldSection section);}
 
     private final TrackedObject thisTracker = TrackedObject.createTrackedObject(this);
@@ -112,18 +113,18 @@ public class WorldEngine {
 
     //Marks a section as dirty, enqueuing it for saving and or render data rebuilding
     public void markDirty(WorldSection section) {
-        this.markDirty(section, UPDATE_FLAGS);
+        this.markDirty(section, DEFAULT_UPDATE_FLAGS, 0);
     }
 
-    public void markDirty(WorldSection section, int changeState) {
+    public void markDirty(WorldSection section, int changeState, int neighborMsk) {
         if (!this.isLive) throw new IllegalStateException("World is not live");
         if (section.tracker != this.sectionTracker) {
             throw new IllegalStateException("Section is not from here");
         }
         if (this.dirtyCallback != null) {
-            this.dirtyCallback.accept(section, changeState);
+            this.dirtyCallback.accept(section, changeState, neighborMsk);
         }
-        if (!section.inSaveQueue) {
+        if ((!section.inSaveQueue)&&(changeState&UPDATE_TYPE_DONT_SAVE)==0) {
             section.markDirty();
         }
     }

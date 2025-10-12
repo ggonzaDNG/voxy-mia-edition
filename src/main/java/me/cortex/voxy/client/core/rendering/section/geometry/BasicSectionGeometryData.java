@@ -34,12 +34,12 @@ public class BasicSectionGeometryData implements IGeometryData {
         Logger.info("if your game crashes/exits here without any other log message, try manually decreasing the geometry capacity");
         glGetError();//Clear any errors
         GlBuffer buffer = null;
-        if (!(Capabilities.INSTANCE.isNvidia && ThreadUtils.isWindows)) {
+        if (!(Capabilities.INSTANCE.isNvidia)) {// && ThreadUtils.isWindows
             buffer = new GlBuffer(geometryCapacity, false);//Only do this if we are not on nvidia
             //TODO: FIXME: TEST, see if the issue is that we are trying to zero the entire buffer, try only zeroing increments
             // or dont zero it at all
         } else {
-            Logger.info("Running on windows nvidia, using workaround sparse buffer allocation");
+            Logger.info("Running on nvidia, using workaround sparse buffer allocation");
         }
         int error = glGetError();
         if (error != GL_NO_ERROR || buffer == null) {
@@ -49,9 +49,6 @@ public class BasicSectionGeometryData implements IGeometryData {
                     buffer.free();
                 }
                 buffer = new GlBuffer(geometryCapacity, GL_SPARSE_STORAGE_BIT_ARB);
-                glBindBuffer(GL_ARRAY_BUFFER, buffer.id);
-                glBufferPageCommitmentARB(GL_ARRAY_BUFFER, 0, geometryCapacity, true);
-                glBindBuffer(GL_ARRAY_BUFFER, 0);
                 //buffer.zero();
                 error = glGetError();
                 if (error != GL_NO_ERROR) {
@@ -65,6 +62,20 @@ public class BasicSectionGeometryData implements IGeometryData {
         this.geometryBuffer = buffer;
         long delta = System.currentTimeMillis() - start;
         Logger.info("Successfully allocated the geometry buffer in " + delta + "ms");
+    }
+
+    private long sparseCommitment = 0;//Tracks the current range of the allocated sparse buffer
+    public void ensureAccessable(int maxElementAccess) {
+        long size = (Integer.toUnsignedLong(maxElementAccess)*8L+65535L)&~65535L;
+        //If we are a sparse buffer, ensure the memory upto the requested size is allocated
+        if (this.geometryBuffer.isSparse()) {
+            if (this.sparseCommitment < size) {//if we try to access memory outside the allocation range, allocate it
+                glBindBuffer(GL_ARRAY_BUFFER, this.geometryBuffer.id);
+                glBufferPageCommitmentARB(GL_ARRAY_BUFFER, this.sparseCommitment, size-this.sparseCommitment, true);
+                glBindBuffer(GL_ARRAY_BUFFER, 0);
+                this.sparseCommitment = size;
+            }
+        }
     }
 
     public GlBuffer getGeometryBuffer() {
@@ -100,11 +111,20 @@ public class BasicSectionGeometryData implements IGeometryData {
             glFinish();
             gpuMemory = Capabilities.INSTANCE.getFreeDedicatedGpuMemory();
         }
+        if (this.geometryBuffer.isSparse()) {
+            glBindBuffer(GL_ARRAY_BUFFER, this.geometryBuffer.id);
+            glBufferPageCommitmentARB(GL_ARRAY_BUFFER, 0, this.sparseCommitment, false);
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+        }
+
         glFinish();
         this.geometryBuffer.free();
         glFinish();
         if (Capabilities.INSTANCE.canQueryGpuMemory) {
             long releaseSize = (long) (this.geometryBuffer.size()*0.75);//if gpu memory usage drops by 75% of the expected value assume we freed it
+            if (this.geometryBuffer.isSparse()) {//If we are using sparse buffers, use the commited size instead
+                releaseSize = (long)(this.sparseCommitment*0.75);
+            }
             if (Capabilities.INSTANCE.getFreeDedicatedGpuMemory()-gpuMemory<=releaseSize) {
                 Logger.info("Attempting to wait for gpu memory to release");
                 long start = System.currentTimeMillis();

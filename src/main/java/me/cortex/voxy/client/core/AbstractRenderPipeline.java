@@ -69,6 +69,11 @@ public abstract class AbstractRenderPipeline extends TrackedObject {
         this.sectionRenderer = sectionRenderer;
     }
 
+    //Called before the pipeline starts running, used to update uniforms etc
+    public void preSetup(Viewport<?> viewport) {
+
+    }
+
     protected abstract int setup(Viewport<?> viewport, int sourceFramebuffer, int srcWidth, int srcHeight);
     protected abstract void postOpaquePreTranslucent(Viewport<?> viewport);
     protected void finish(Viewport<?> viewport, int sourceFrameBuffer, int srcWidth, int srcHeight) {
@@ -200,8 +205,19 @@ public abstract class AbstractRenderPipeline extends TrackedObject {
     public abstract void setupAndBindTranslucent(Viewport<?> viewport);
 
 
+    public void bindUniforms() {
+        this.bindUniforms(-1);
+    }
+
+    public void bindUniforms(int index) {
+    }
+
     //null means no function, otherwise return the taa injection function
-    public String taaFunction(AbstractSectionRenderer<?,?> renderer, String functionName) {
+    public String taaFunction(String functionName) {
+        return this.taaFunction(-1, functionName);
+    }
+
+    public String taaFunction(int uboBindingPoint, String functionName) {
         return null;
     }
 

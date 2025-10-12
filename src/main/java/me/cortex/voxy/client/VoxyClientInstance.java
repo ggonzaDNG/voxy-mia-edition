@@ -26,7 +26,6 @@ public class VoxyClientInstance extends VoxyInstance {
     private final SectionStorageConfig storageConfig;
     private final Path basePath;
     private final boolean noIngestOverride;
-
     public VoxyClientInstance() {
         super(VoxyConfig.CONFIG.serviceThreads);
         var path = FlashbackCompat.getReplayStoragePath();
@@ -90,6 +89,15 @@ public class VoxyClientInstance extends VoxyInstance {
         return config.sectionStorageConfig;
     }
 
+    public Path getStorageBasePath() {
+        return this.basePath;
+    }
+
+    @Override
+    public boolean isIngestEnabled(WorldIdentifier worldId) {
+        return !this.noIngestOverride;
+    }
+
     private static class Config {
         public int version = 1;
         public SectionStorageConfig sectionStorageConfig;
@@ -113,10 +121,6 @@ public class VoxyClientInstance extends VoxyInstance {
         config.sectionStorageConfig = serializer;
 
         DEFAULT_STORAGE_CONFIG = config;
-    }
-
-    public Path getStorageBasePath() {
-        return this.basePath;
     }
 
     private static Path getBasePath() {
@@ -144,10 +148,5 @@ public class VoxyClientInstance extends VoxyInstance {
             }
         }
         return basePath.toAbsolutePath();
-    }
-
-    @Override
-    public boolean isIngestEnabled(WorldIdentifier worldId) {
-        return !this.noIngestOverride;
     }
 }

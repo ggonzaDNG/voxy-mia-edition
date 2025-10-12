@@ -22,8 +22,7 @@ public class VoxyCommon implements ModInitializer {
         } else {
             IS_IN_MINECRAFT = true;
             var version = mod.getMetadata().getVersion().getFriendlyString();
-            var commit = mod.getMetadata().getCustomValue("commit").getAsString();
-            MOD_VERSION = version + "-" + commit;
+            MOD_VERSION = version;
             IS_DEDICATED_SERVER = FabricLoader.getInstance().getEnvironmentType() == EnvType.SERVER;
             Serialization.init();
         }
@@ -85,7 +84,6 @@ public class VoxyCommon implements ModInitializer {
     public static boolean isAvailable() {
         return FACTORY != null;
     }
-
 
     public static final boolean IS_MINE_IN_ABYSS = false;
 }
