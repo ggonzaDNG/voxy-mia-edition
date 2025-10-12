@@ -14,9 +14,15 @@ import me.cortex.voxy.common.config.storage.rocksdb.RocksDBStorageBackend;
 import me.cortex.voxy.commonImpl.ImportManager;
 import me.cortex.voxy.commonImpl.VoxyInstance;
 import me.cortex.voxy.commonImpl.WorldIdentifier;
+
+import static me.cortex.voxy.commonImpl.WorldIdentifier.getWorldId;
+
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.WorldSavePath;
 
+import org.apache.commons.lang3.StringUtils;
+
+import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -45,9 +51,15 @@ public class VoxyClientInstance extends VoxyInstance {
     @Override
     protected SectionStorage createStorage(WorldIdentifier identifier) {
         var ctx = new ConfigBuildCtx();
-        ctx.setProperty(ConfigBuildCtx.BASE_SAVE_PATH, this.basePath.toString());
-        ctx.setProperty(ConfigBuildCtx.WORLD_IDENTIFIER, identifier.getWorldId());
+        
+        File sharedFolder = basePath.resolveSibling(StringUtils.substringAfter(basePath.toFile().getName(), ".")).toFile();
+        String finalBasePath = sharedFolder.exists() && sharedFolder.isDirectory() ? sharedFolder.getAbsolutePath() : basePath.toString();
+
+        ctx.setProperty(ConfigBuildCtx.BASE_SAVE_PATH, finalBasePath);
+        ctx.setProperty(ConfigBuildCtx.WORLD_IDENTIFIER, getWorldId(identifier));
+
         ctx.pushPath(ConfigBuildCtx.DEFAULT_STORAGE_PATH);
+
         return this.storageConfig.build(ctx);
     }
 
