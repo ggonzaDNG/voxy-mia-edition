@@ -34,7 +34,7 @@ public class BasicSectionGeometryData implements IGeometryData {
         Logger.info("if your game crashes/exits here without any other log message, try manually decreasing the geometry capacity");
         glGetError();//Clear any errors
         GlBuffer buffer = null;
-        if (!(Capabilities.INSTANCE.isNvidia)) {// && ThreadUtils.isWindows
+        if (!(Capabilities.INSTANCE.isNvidia&&Capabilities.INSTANCE.sparseBuffer)) {//This hack makes it so it doesnt crash on renderdoc
             buffer = new GlBuffer(geometryCapacity, false);//Only do this if we are not on nvidia
             //TODO: FIXME: TEST, see if the issue is that we are trying to zero the entire buffer, try only zeroing increments
             // or dont zero it at all
@@ -71,6 +71,7 @@ public class BasicSectionGeometryData implements IGeometryData {
         if (this.geometryBuffer.isSparse()) {
             if (this.sparseCommitment < size) {//if we try to access memory outside the allocation range, allocate it
                 glBindBuffer(GL_ARRAY_BUFFER, this.geometryBuffer.id);
+                size += 65536L*1024;//increase size by 64mb to prevent driver allocation thrashing
                 glBufferPageCommitmentARB(GL_ARRAY_BUFFER, this.sparseCommitment, size-this.sparseCommitment, true);
                 glBindBuffer(GL_ARRAY_BUFFER, 0);
                 this.sparseCommitment = size;

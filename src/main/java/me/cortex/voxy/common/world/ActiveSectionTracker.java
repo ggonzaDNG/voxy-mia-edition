@@ -3,6 +3,7 @@ package me.cortex.voxy.common.world;
 import it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import me.cortex.voxy.common.Logger;
+import me.cortex.voxy.common.world.other.Mapper;
 import org.jetbrains.annotations.Nullable;
 
 import java.lang.invoke.MethodHandles;
@@ -113,12 +114,22 @@ public class ActiveSectionTracker {
             long stamp2 = lock.readLock();
             long stamp = this.lruLock.writeLock();
             section = this.lruSecondaryCache.remove(key);
+
+            WorldSection removal = null;
+            if (section == null && (!this.lruSecondaryCache.isEmpty()) && this.lruSize+100<this.lruSecondaryCache.size()+this.getLoadedCacheCount()) {//Add a self clamping lru case for when there are alot of loaded sections
+                removal = this.lruSecondaryCache.removeFirst();
+            }
+
             this.lruLock.unlockWrite(stamp);
             if (section != null) {
                 section.primeForReuse();
                 section.acquire(1);
             }
             lock.unlockRead(stamp2);
+
+            if (removal != null) {
+                removal._releaseArray();
+            }
         } else {
             VolatileHolder.PRE_ACQUIRE_COUNT.getAndAdd(holder, 1);
         }
@@ -145,7 +156,9 @@ public class ActiveSectionTracker {
                 //TODO: REWRITE THE section tracker _again_ to not be so shit and jank, and so that Arrays.fill is not 10% of the execution time
                 if (status == 1) {
                     //We need to set the data to air as it is undefined state
-                    Arrays.fill(section.data, 0);
+                    int sky = 15;
+                    int block = 0;
+                    Arrays.fill(section.data, Mapper.composeMappingId((byte) (sky|(block<<4)),0,0));
                 }
                 section.acquire(1);
             }

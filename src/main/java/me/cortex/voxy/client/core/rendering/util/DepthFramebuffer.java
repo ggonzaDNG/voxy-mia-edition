@@ -28,10 +28,14 @@ public class DepthFramebuffer {
                 this.depthBuffer.free();
             }
             this.depthBuffer = new GlTexture().store(this.depthType, 1, width, height);
-            this.framebuffer.bind(this.depthType == GL_DEPTH24_STENCIL8?GL_DEPTH_STENCIL_ATTACHMENT: GL_DEPTH_ATTACHMENT, this.depthBuffer).verify();
+            this.framebuffer.bind(this.getDepthAttachmentType(), this.depthBuffer).verify();
             return true;
         }
         return false;
+    }
+
+    public int getDepthAttachmentType() {
+        return this.depthType == GL_DEPTH24_STENCIL8?GL_DEPTH_STENCIL_ATTACHMENT: GL_DEPTH_ATTACHMENT;
     }
 
     public void clear() {
@@ -57,5 +61,9 @@ public class DepthFramebuffer {
 
     public void bind() {
         glBindFramebuffer(GL_FRAMEBUFFER, this.framebuffer.id);
+    }
+
+    public int getFormat() {
+        return this.depthType;
     }
 }

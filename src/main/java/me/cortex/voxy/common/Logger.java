@@ -1,8 +1,8 @@
 package me.cortex.voxy.common;
 
 import me.cortex.voxy.commonImpl.VoxyCommon;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.Component;
 import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
@@ -12,6 +12,7 @@ import java.util.stream.Stream;
 public class Logger {
     public static boolean INSERT_CLASS = true;
     public static boolean SHUTUP = false;
+    public static boolean SHUTUP_INFO = false;
     private static final org.slf4j.Logger LOGGER = LoggerFactory.getLogger("Voxy");
 
 
@@ -52,13 +53,17 @@ public class Logger {
         String error = (INSERT_CLASS?("["+callClsName()+"]: "):"") + Stream.of(args).map(Logger::objToString).collect(Collectors.joining(" "));
         LOGGER.error(error, throwable);
         if (VoxyCommon.IS_IN_MINECRAFT && !VoxyCommon.IS_DEDICATED_SERVER) {
-            var instance = MinecraftClient.getInstance();
-            if (instance != null) {
-                instance.executeSync(() -> {
-                    var player = MinecraftClient.getInstance().player;
-                    if (player != null) player.sendMessage(Text.literal(error), true);
-                });
-            }
+            error0(error);//This is done so that on dedicated server, the Minecraft client class isnt loaded
+        }
+    }
+
+    private static void error0(String error) {
+        var instance = Minecraft.getInstance();
+        if (instance != null) {
+            instance.executeIfPossible(() -> {
+                var player = Minecraft.getInstance().player;
+                if (player != null) player.displayClientMessage(Component.literal(error), true);
+            });
         }
     }
 
@@ -76,7 +81,7 @@ public class Logger {
     }
 
     public static void info(Object... args) {
-        if (SHUTUP) {
+        if (SHUTUP||SHUTUP_INFO) {
             return;
         }
         Throwable throwable = null;

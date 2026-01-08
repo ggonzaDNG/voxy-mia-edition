@@ -1,5 +1,7 @@
 package me.cortex.voxy.client;
 
+import me.cortex.voxy.client.core.IGetVoxyRenderSystem;
+import me.cortex.voxy.client.core.VoxyRenderSystem;
 import me.cortex.voxy.client.core.gl.Capabilities;
 import me.cortex.voxy.client.core.model.bakery.BudgetBufferRenderer;
 import me.cortex.voxy.client.core.rendering.util.SharedIndexBuffer;
@@ -8,6 +10,17 @@ import me.cortex.voxy.commonImpl.VoxyCommon;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.debug.DebugScreenDisplayer;
+import net.minecraft.client.gui.components.debug.DebugScreenEntries;
+import net.minecraft.client.gui.components.debug.DebugScreenEntry;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.chunk.LevelChunk;
+import org.jspecify.annotations.Nullable;
+
+import main.java.me.cortex.voxy.client.VoxyAbyssDebugScreenEntry;
 
 import java.util.HashSet;
 import java.util.function.Consumer;
@@ -16,11 +29,14 @@ import java.util.function.Function;
 public class VoxyClient implements ClientModInitializer {
     private static final HashSet<String> FREX = new HashSet<>();
 
-
     public static void initVoxyClient() {
         Capabilities.init();//Ensure clinit is called
 
-        boolean systemSupported = Capabilities.INSTANCE.compute && Capabilities.INSTANCE.indirectParameters;
+        if (Capabilities.INSTANCE.hasBrokenDepthSampler) {
+            Logger.error("AMD broken depth sampler detected, voxy does not work correctly and has been disabled, this will hopefully be fixed in the future");
+        }
+
+        boolean systemSupported = Capabilities.INSTANCE.compute && Capabilities.INSTANCE.indirectParameters && !Capabilities.INSTANCE.hasBrokenDepthSampler;
         if (systemSupported) {
 
             SharedIndexBuffer.INSTANCE.id();
@@ -39,11 +55,35 @@ public class VoxyClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        DebugScreenEntries.register(Identifier.fromNamespaceAndPath("voxy", "version"), new DebugScreenEntry() {
+            @Override
+            public void display(DebugScreenDisplayer lines, @Nullable Level level, @Nullable LevelChunk levelChunk, @Nullable LevelChunk levelChunk2) {
+                if (!VoxyCommon.isAvailable()) {
+                    lines.addLine(ChatFormatting.RED + "voxy-"+VoxyCommon.MOD_VERSION);//Voxy installed, not avalible
+                    return;
+                }
+                var instance = VoxyCommon.getInstance();
+                if (instance == null) {
+                    lines.addLine(ChatFormatting.YELLOW + "voxy-" + VoxyCommon.MOD_VERSION);//Voxy avalible, no instance active
+                    return;
+                }
+                VoxyRenderSystem vrs = null;
+                var wr = Minecraft.getInstance().levelRenderer;
+                if (wr != null) vrs = ((IGetVoxyRenderSystem) wr).getVoxyRenderSystem();
+
+                //Voxy instance active
+                lines.addLine((vrs==null?ChatFormatting.DARK_GREEN:ChatFormatting.GREEN)+"voxy-"+VoxyCommon.MOD_VERSION);
+            }
+        });
+
+        DebugScreenEntries.register(Identifier.fromNamespaceAndPath("voxy","debug"), new VoxyDebugScreenEntry());
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
             if (VoxyCommon.isAvailable()) {
                 dispatcher.register(VoxyCommands.register());
             }
         });
+
+        DebugScreenEntries.register(Identifier.fromNamespaceAndPath("voxy","abyssCoords"), new VoxyAbyssDebugScreenEntry());
 
         FabricLoader.getInstance()
                 .getEntrypoints("frex_flawless_frames", Consumer.class)
@@ -57,4 +97,13 @@ public class VoxyClient implements ClientModInitializer {
     public static boolean isFrexActive() {
         return !FREX.isEmpty();
     }
+
+    public static int getOcclusionDebugState() {
+        return 0;
+    }
+
+    public static boolean disableSodiumChunkRender() {
+        return false;// getOcclusionDebugState() != 0;
+    }
+
 }

@@ -13,7 +13,7 @@ public class WorldUpdater {
     public static void insertUpdate(WorldEngine into, VoxelizedSection section) {//TODO: add a bitset of levels to update and if it should force update
 
         //Do some very cheeky stuff for MiB
-        if (VoxyConfig.CONFIG.stackLayers) {
+        if (true) {
             int sector = (section.x+512)>>10;
             section.setPosition(section.x-(sector<<10), section.y+16+(256-32-sector*30), section.z);//Note sector size mult is 30 because the top chunk is replicated (and so is bottom chunk)
         }
@@ -55,7 +55,11 @@ public class WorldUpdater {
                     final int iSecMsk1 = (~secMsk) + 1;
 
                     int secIdx = 0;
-                    //TODO: manually unroll and do e.g. 4 iterations per loop
+
+                    //TODO rotate the loop parralelization
+                    // i.e. instead of doing 4 consecutive blocks, which would all be in the same cache line
+                    // do 4 seperate rows so they are in different cache lines, should allow
+                    // more instruction pipelining (in theory)
                     for (int i = 0; i <= 0xFFF; i+=4) {
                         int cSecIdx = secIdx + baseSec;
                         secIdx = (secIdx + iSecMsk1) & secMsk;

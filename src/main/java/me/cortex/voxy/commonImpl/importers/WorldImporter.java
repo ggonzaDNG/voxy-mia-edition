@@ -2,33 +2,36 @@ package me.cortex.voxy.commonImpl.importers;
 
 import com.mojang.serialization.Codec;
 import me.cortex.voxy.common.Logger;
-import me.cortex.voxy.common.thread.ServiceSlice;
-import me.cortex.voxy.common.thread.ServiceThreadPool;
+import me.cortex.voxy.common.thread.Service;
+import me.cortex.voxy.common.thread.ServiceManager;
 import me.cortex.voxy.common.util.MemoryBuffer;
+import me.cortex.voxy.common.util.Pair;
 import me.cortex.voxy.common.util.UnsafeUtil;
 import me.cortex.voxy.common.voxelization.VoxelizedSection;
 import me.cortex.voxy.common.voxelization.WorldConversionFactory;
 import me.cortex.voxy.common.world.WorldEngine;
 import me.cortex.voxy.common.world.WorldUpdater;
+
 import me.cortex.voxy.client.core.util.AbyssUtil;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.nbt.NbtCompound;
+
+import net.minecraft.core.Holder;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.nbt.CompoundTag;
+
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtOps;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.registry.entry.RegistryEntry;
-import net.minecraft.util.collection.IndexedIterable;
-import net.minecraft.world.World;
-import net.minecraft.world.biome.Biome;
-import net.minecraft.world.biome.BiomeKeys;
-import net.minecraft.world.chunk.ChunkNibbleArray;
-import net.minecraft.world.chunk.ChunkStatus;
-import net.minecraft.world.chunk.PalettedContainer;
-import net.minecraft.world.chunk.ReadableContainer;
-import net.minecraft.world.storage.ChunkCompressionFormat;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.Biomes;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.DataLayer;
+import net.minecraft.world.level.chunk.PalettedContainer;
+import net.minecraft.world.level.chunk.PalettedContainerFactory;
+import net.minecraft.world.level.chunk.PalettedContainerRO;
+import net.minecraft.world.level.chunk.Strategy;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.level.chunk.storage.RegionFileVersion;
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
 import org.apache.commons.compress.archivers.zip.ZipFile;
 import org.lwjgl.system.MemoryUtil;
@@ -43,6 +46,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -50,73 +54,79 @@ import java.util.function.Predicate;
 
 public class WorldImporter implements IDataImporter {
     private final WorldEngine world;
-    private final ReadableContainer<RegistryEntry<Biome>> defaultBiomeProvider;
-    private final Codec<ReadableContainer<RegistryEntry<Biome>>> biomeCodec;
+    private final PalettedContainerRO<Holder<Biome>> defaultBiomeProvider;
+    private final Codec<PalettedContainerRO<Holder<Biome>>> biomeCodec;
+    private final Codec<PalettedContainer<BlockState>> blockStateCodec;
     private final AtomicInteger estimatedTotalChunks = new AtomicInteger();//Slowly converges to the true value
     private final AtomicInteger totalChunks = new AtomicInteger();
     private final AtomicInteger chunksProcessed = new AtomicInteger();
 
     private final ConcurrentLinkedDeque<Runnable> jobQueue = new ConcurrentLinkedDeque<>();
-    private final ServiceSlice threadPool;
+    private final Service service;
 
     private volatile boolean isRunning;
 
-    public WorldImporter(WorldEngine worldEngine, World mcWorld, ServiceThreadPool servicePool, BooleanSupplier runChecker) {
+    public WorldImporter(WorldEngine worldEngine, Level mcWorld, ServiceManager sm, BooleanSupplier runChecker) {
         this.world = worldEngine;
-        this.threadPool = servicePool.createServiceNoCleanup("World importer", 3, ()->()->this.jobQueue.poll().run(), runChecker);
+        this.service = sm.createService(()->new Pair<>(()->this.jobQueue.poll().run(), ()->{}), 3, "World importer", runChecker);
 
-        var biomeRegistry = mcWorld.getRegistryManager().getOrThrow(RegistryKeys.BIOME);
-        var defaultBiome = biomeRegistry.getOrThrow(BiomeKeys.PLAINS);
-        this.defaultBiomeProvider = new ReadableContainer<>() {
+        var biomeRegistry = mcWorld.registryAccess().lookupOrThrow(Registries.BIOME);
+        var defaultBiome = biomeRegistry.getOrThrow(Biomes.PLAINS);
+        this.defaultBiomeProvider = new PalettedContainerRO<>() {
             @Override
-            public RegistryEntry<Biome> get(int x, int y, int z) {
+            public Holder<Biome> get(int x, int y, int z) {
                 return defaultBiome;
             }
 
             @Override
-            public void forEachValue(Consumer<RegistryEntry<Biome>> action) {
+            public void getAll(Consumer<Holder<Biome>> action) {
 
             }
 
             @Override
-            public void writePacket(PacketByteBuf buf) {
+            public void write(FriendlyByteBuf buf) {
 
             }
 
             @Override
-            public int getPacketSize() {
+            public int getSerializedSize() {
                 return 0;
             }
 
             @Override
-            public boolean hasAny(Predicate<RegistryEntry<Biome>> predicate) {
+            public int bitsPerEntry() {
+                return 0;
+            }
+
+            @Override
+            public boolean maybeHas(Predicate<Holder<Biome>> predicate) {
                 return false;
             }
 
             @Override
-            public void count(PalettedContainer.Counter<RegistryEntry<Biome>> counter) {
+            public void count(PalettedContainer.CountConsumer<Holder<Biome>> counter) {
 
             }
 
             @Override
-            public PalettedContainer<RegistryEntry<Biome>> copy() {
+            public PalettedContainer<Holder<Biome>> copy() {
                 return null;
             }
 
             @Override
-            public PalettedContainer<RegistryEntry<Biome>> slice() {
+            public PalettedContainer<Holder<Biome>> recreate() {
                 return null;
             }
 
             @Override
-            public Serialized<RegistryEntry<Biome>> serialize(IndexedIterable<RegistryEntry<Biome>> idList, PalettedContainer.PaletteProvider paletteProvider) {
+            public PackedData<Holder<Biome>> pack(Strategy<Holder<Biome>> provider) {
                 return null;
             }
         };
 
-        this.biomeCodec = PalettedContainer.createReadableContainerCodec(
-                biomeRegistry.getIndexedEntries(), biomeRegistry.getEntryCodec(), PalettedContainer.PaletteProvider.BIOME, biomeRegistry.getOrThrow(BiomeKeys.PLAINS)
-        );
+        var factory = PalettedContainerFactory.create(mcWorld.registryAccess());
+        this.biomeCodec = factory.biomeContainerCodec();
+        this.blockStateCodec = factory.blockStatesContainerCodec();
     }
 
 
@@ -141,7 +151,11 @@ public class WorldImporter implements IDataImporter {
         return this.world;
     }
 
+    private final AtomicBoolean isShutdown = new AtomicBoolean();
     public void shutdown() {
+        if (this.isShutdown.getAndSet(true)) {
+            return;
+        }
         this.isRunning = false;
         if (this.worker != null) {
             try {
@@ -150,9 +164,9 @@ public class WorldImporter implements IDataImporter {
                 throw new RuntimeException(e);
             }
         }
-        if (!this.threadPool.isFreed()) {
+        if (this.service.isLive()) {
             this.world.releaseRef();
-            this.threadPool.shutdown();
+            this.service.shutdown();
         }
         //Free all the remaining entries by running the lambda
         while (!this.jobQueue.isEmpty()) {
@@ -252,13 +266,13 @@ public class WorldImporter implements IDataImporter {
                     }
                 }
                 if (!this.isRunning) {
-                    this.threadPool.blockTillEmpty();
+                    this.service.blockTillEmpty();
                     this.completionCallback.onCompletion(this.totalChunks.get());
                     this.worker = null;
                     return;
                 }
             }
-            this.threadPool.blockTillEmpty();
+            this.service.blockTillEmpty();
             while (this.chunksProcessed.get() != this.totalChunks.get() && this.isRunning) {
                 Thread.yield();
                 try {
@@ -267,9 +281,11 @@ public class WorldImporter implements IDataImporter {
                     throw new RuntimeException(e);
                 }
             }
-            this.worker = null;
-            this.world.releaseRef();
-            this.threadPool.shutdown();
+            if (!this.isShutdown.getAndSet(true)) {
+                this.worker = null;
+                this.service.shutdown();
+                this.world.releaseRef();
+            }
             this.completionCallback.onCompletion(this.totalChunks.get());
         });
         this.worker.setName("World importer");
@@ -372,7 +388,7 @@ public class WorldImporter implements IDataImporter {
                                     if (decompressedData == null) {
                                         Logger.error("Error decompressing chunk data");
                                     } else {
-                                        var nbt = NbtIo.readCompound(decompressedData);
+                                        var nbt = NbtIo.read(decompressedData);
                                         this.importChunkNBT(nbt, x, z);
                                     }
                                 }
@@ -384,7 +400,7 @@ public class WorldImporter implements IDataImporter {
                         });
                         this.totalChunks.incrementAndGet();
                         this.estimatedTotalChunks.incrementAndGet();
-                        this.threadPool.execute();
+                        this.service.execute();
                     }
                 }
             }
@@ -417,7 +433,7 @@ public class WorldImporter implements IDataImporter {
     }
 
     private DataInputStream decompress(byte flags, MemoryBuffer stream) throws IOException {
-        ChunkCompressionFormat chunkStreamVersion = ChunkCompressionFormat.get(flags);
+        RegionFileVersion chunkStreamVersion = RegionFileVersion.fromId(flags);
         if (chunkStreamVersion == null) {
             Logger.error("Chunk has invalid chunk stream version");
             return null;
@@ -426,7 +442,7 @@ public class WorldImporter implements IDataImporter {
         }
     }
 
-    private void importChunkNBT(NbtCompound chunk, int regionX, int regionZ) {
+    private void importChunkNBT(CompoundTag chunk, int regionX, int regionZ) {
         if (!chunk.contains("Status")) {
             //Its not real so decrement the chunk
             this.totalChunks.decrementAndGet();
@@ -434,22 +450,22 @@ public class WorldImporter implements IDataImporter {
         }
 
         //Dont process non full chunk sections
-        var status = ChunkStatus.byId(chunk.getString("Status", null));
+        var status = ChunkStatus.byName(chunk.getStringOr("Status", null));
         if (status != ChunkStatus.FULL && status != ChunkStatus.EMPTY) {//We also import empty since they are from data upgrade
             this.totalChunks.decrementAndGet();
             return;
         }
 
         try {
-            int x = chunk.getInt("xPos", Integer.MIN_VALUE);
-            int z = chunk.getInt("zPos", Integer.MIN_VALUE);
+            int x = chunk.getIntOr("xPos", Integer.MIN_VALUE);
+            int z = chunk.getIntOr("zPos", Integer.MIN_VALUE);
             if (x>>5 != regionX || z>>5 != regionZ) {
                 Logger.error("Chunk position is not located in correct region, expected: (" + regionX + ", " + regionZ+"), got: " + "(" + (x>>5) + ", " + (z>>5)+"), importing anyway");
             }
 
             for (var sectionE : chunk.getList("sections").orElseThrow()) {
-                var section = (NbtCompound) sectionE;
-                int y = section.getInt("Y", Integer.MIN_VALUE);
+                var section = (CompoundTag) sectionE;
+                int y = section.getIntOr("Y", Integer.MIN_VALUE);
                 this.importSectionNBT(x, y, z, section);
             }
         } catch (Exception e) {
@@ -461,8 +477,7 @@ public class WorldImporter implements IDataImporter {
 
     private static final byte[] EMPTY = new byte[0];
     private static final ThreadLocal<VoxelizedSection> SECTION_CACHE = ThreadLocal.withInitial(VoxelizedSection::createEmpty);
-    private static final Codec<PalettedContainer<BlockState>> BLOCK_STATE_CODEC = PalettedContainer.createPalettedContainerCodec(Block.STATE_IDS, BlockState.CODEC, PalettedContainer.PaletteProvider.BLOCK_STATE, Blocks.AIR.getDefaultState());
-    private void importSectionNBT(int x, int y, int z, NbtCompound section) {
+    private void importSectionNBT(int x, int y, int z, CompoundTag section) {
         if (section.getCompound("block_states").isEmpty()) {
             return;
         }
@@ -470,21 +485,21 @@ public class WorldImporter implements IDataImporter {
         byte[] blockLightData = section.getByteArray("BlockLight").orElse(EMPTY);
         byte[] skyLightData = section.getByteArray("SkyLight").orElse(EMPTY);
 
-        ChunkNibbleArray blockLight;
+        DataLayer blockLight;
         if (blockLightData.length != 0) {
-            blockLight = new ChunkNibbleArray(blockLightData);
+            blockLight = new DataLayer(blockLightData);
         } else {
             blockLight = null;
         }
 
-        ChunkNibbleArray skyLight;
+        DataLayer skyLight;
         if (skyLightData.length != 0) {
-            skyLight = new ChunkNibbleArray(skyLightData);
+            skyLight = new DataLayer(skyLightData);
         } else {
             skyLight = null;
         }
 
-        var blockStatesRes = BLOCK_STATE_CODEC.parse(NbtOps.INSTANCE, section.getCompound("block_states").get());
+        var blockStatesRes = blockStateCodec.parse(NbtOps.INSTANCE, section.getCompound("block_states").get());
         if (!blockStatesRes.hasResultOrPartial()) {
             //TODO: if its only partial, it means should try to upgrade the nbt format with datafixerupper probably
             return;

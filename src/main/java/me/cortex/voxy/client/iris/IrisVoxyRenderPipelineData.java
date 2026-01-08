@@ -3,6 +3,7 @@ package me.cortex.voxy.client.iris;
 import com.google.common.collect.ImmutableSet;
 import it.unimi.dsi.fastutil.ints.Int2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+import it.unimi.dsi.fastutil.longs.Long2ObjectFunction;
 import kroppeb.stareval.function.FunctionReturn;
 import kroppeb.stareval.function.Type;
 import me.cortex.voxy.client.core.IrisVoxyRenderPipeline;
@@ -13,6 +14,7 @@ import net.irisshaders.iris.gl.buffer.ShaderStorageBufferHolder;
 import net.irisshaders.iris.gl.image.ImageHolder;
 import net.irisshaders.iris.gl.sampler.GlSampler;
 import net.irisshaders.iris.gl.sampler.SamplerHolder;
+import net.irisshaders.iris.gl.state.FogMode;
 import net.irisshaders.iris.gl.state.ValueUpdateNotifier;
 import net.irisshaders.iris.gl.texture.InternalTextureFormat;
 import net.irisshaders.iris.gl.texture.TextureType;
@@ -20,15 +22,14 @@ import net.irisshaders.iris.gl.uniform.*;
 import net.irisshaders.iris.pipeline.IrisRenderingPipeline;
 import net.irisshaders.iris.targets.RenderTarget;
 import net.irisshaders.iris.targets.RenderTargets;
+import net.irisshaders.iris.uniforms.CommonUniforms;
 import net.irisshaders.iris.uniforms.custom.CustomUniforms;
 import net.irisshaders.iris.uniforms.custom.cached.*;
 import org.joml.*;
 import org.lwjgl.system.MemoryUtil;
 
 import java.util.*;
-import java.util.function.IntConsumer;
-import java.util.function.IntSupplier;
-import java.util.function.LongConsumer;
+import java.util.function.*;
 import java.util.stream.Collectors;
 
 import static org.lwjgl.opengl.ARBDirectStateAccess.glBindTextureUnit;
@@ -50,6 +51,7 @@ public class IrisVoxyRenderPipelineData {
     public final float[] resolutionScale;
     public final String TAA;
     public final boolean useViewportDims;
+    public final boolean deferTranslucency;
 
     private IrisVoxyRenderPipelineData(IrisShaderPatch patch, int[] opaqueDrawTargets, int[] translucentDrawTargets, StructLayout uniformSet, Runnable blendingSetup, ImageSet imageSet, SSBOSet ssboSet) {
         this.opaqueDrawTargets = opaqueDrawTargets;
@@ -64,6 +66,7 @@ public class IrisVoxyRenderPipelineData {
         this.TAA = patch.getTAAShift();
         this.resolutionScale = patch.getRenderScale();
         this.useViewportDims = patch.useViewportDims();
+        this.deferTranslucency = patch.deferedTranslucentRendering();
     }
 
     public SSBOSet getSsboSet() {
@@ -91,6 +94,7 @@ public class IrisVoxyRenderPipelineData {
     public static IrisVoxyRenderPipelineData buildPipeline(IrisRenderingPipeline ipipe, IrisShaderPatch patch, CustomUniforms cu, ShaderStorageBufferHolder ssboHolder) {
         var uniforms = createUniformLayoutStructAndUpdater(createUniformSet(cu, patch));
 
+
         var imageSet = createImageSet(ipipe, patch);
 
         var ssboSet = createSSBOLayouts(patch.getSSBOs(), ssboHolder);
@@ -114,40 +118,60 @@ public class IrisVoxyRenderPipelineData {
         return targetTextures;
     }
 
+
+    private static String convertToGlslType(UniformType type) {
+        return switch (type) {
+            case INT -> "int";
+            case FLOAT -> "float";
+            case MAT3 -> "mat3";
+            case MAT4 -> "mat4";
+            case VEC2 -> "vec2";
+            case VEC2I -> "ivec2";
+            case VEC3 -> "vec3";
+            case VEC3I -> "ivec3";
+            case VEC4 -> "vec4";
+            case VEC4I -> "ivec4";
+        };
+    }
+
+    public boolean shouldDeferTranslucency() {
+        return false;
+    }
+
     public record StructLayout(int size, String layout, LongConsumer updater) {}
-    private static StructLayout createUniformLayoutStructAndUpdater(CachedUniform[] uniforms) {
-        if (uniforms.length == 0) {
+    private static StructLayout createUniformLayoutStructAndUpdater(List<UniformWritingHolder> uniforms) {
+        if (uniforms.size() == 0) {
             return null;
         }
 
-        List<CachedUniform>[] ordering = new List[]{new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>()};
+        List<UniformWritingHolder>[] ordering = new List[]{new ArrayList<>(), new ArrayList<>(), new ArrayList<>(), new ArrayList<>()};
 
         //Creates an optimial struct layout for the uniforms
         for (var uniform : uniforms) {
-            int order = getUniformOrdering(Type.convert(uniform.getType()));
+            int order = getUniformOrdering(uniform.type);
             ordering[order].add(uniform);
         }
 
         //Emit the ordering, note this is not optimial, but good enough, e.g. if have even number of align 2, emit that after align 4
         int pos = 0;
-        Int2ObjectLinkedOpenHashMap<CachedUniform> layout = new Int2ObjectLinkedOpenHashMap<>();
+        Int2ObjectLinkedOpenHashMap<UniformWritingHolder> layout = new Int2ObjectLinkedOpenHashMap<>();
         for (var uniform : ordering[0]) {//Emit exact align 4
-            layout.put(pos, uniform); pos += getSizeAndAlignment(Type.convert(uniform.getType()))>>5;
+            layout.put(pos, uniform); pos += getSizeAndAlignment(uniform.type)>>5;
         }
         if (!ordering[1].isEmpty() && (ordering[1].size()&1)==0) {
             //Emit all the align 2 as there is an even number of them
             for (var uniform : ordering[1]) {
-                layout.put(pos, uniform); pos += getSizeAndAlignment(Type.convert(uniform.getType()))>>5;
+                layout.put(pos, uniform); pos += getSizeAndAlignment(uniform.type)>>5;
             }
             ordering[1].clear();
         }
         //Emit align 3
         for (var uniform : ordering[2]) {//Emit size odd, alignment must be 4
-            layout.put(pos, uniform); pos += getSizeAndAlignment(Type.convert(uniform.getType()))>>5;
+            layout.put(pos, uniform); pos += getSizeAndAlignment(uniform.type)>>5;
             //We must get a size 1 to pad to align 4
             if (!ordering[3].isEmpty()) {//Size 1
                 uniform = ordering[3].removeFirst();
-                layout.put(pos, uniform); pos += getSizeAndAlignment(Type.convert(uniform.getType()))>>5;
+                layout.put(pos, uniform); pos += getSizeAndAlignment(uniform.type)>>5;
             } else {//Padding must be injected
                 pos += 1;
             }
@@ -155,15 +179,15 @@ public class IrisVoxyRenderPipelineData {
 
         //Emit align 2
         for (var uniform : ordering[1]) {
-            layout.put(pos, uniform); pos += getSizeAndAlignment(Type.convert(uniform.getType()))>>5;
+            layout.put(pos, uniform); pos += getSizeAndAlignment(uniform.type)>>5;
         }
 
         //Emit align 1
         for (var uniform : ordering[3]) {
-            layout.put(pos, uniform); pos += getSizeAndAlignment(Type.convert(uniform.getType()))>>5;
+            layout.put(pos, uniform); pos += getSizeAndAlignment(uniform.type)>>5;
         }
 
-        if (layout.size()!=uniforms.length) {
+        if (layout.size()!=uniforms.size()) {
             throw new IllegalStateException();
         }
 
@@ -173,7 +197,7 @@ public class IrisVoxyRenderPipelineData {
         {
             StringBuilder struct = new StringBuilder("{\n");
             for (var pair : layout.int2ObjectEntrySet()) {
-                struct.append("\t").append(pair.getValue().getType().toString()).append(" ").append(pair.getValue().getName()).append(";\n");
+                struct.append("\t").append(convertToGlslType(pair.getValue().type)).append(" ").append(pair.getValue().name).append(";\n");
             }
             struct.append("}");
             structLayout = struct.toString();
@@ -181,11 +205,10 @@ public class IrisVoxyRenderPipelineData {
 
         LongConsumer updater;
         {
-            FunctionReturn cacheRetObj = new FunctionReturn();
-            LongConsumer[] updaters = new LongConsumer[uniforms.length];
+            LongConsumer[] updaters = new LongConsumer[uniforms.size()];
             int i = 0;
             for (var pair : layout.int2ObjectEntrySet()) {
-                updaters[i++] = createWriter(pair.getIntKey()*4L, cacheRetObj, pair.getValue());
+                updaters[i++] = pair.getValue().writingFactory.get(pair.getIntKey()*4L);
             }
 
             updater = ptr -> {
@@ -271,9 +294,81 @@ public class IrisVoxyRenderPipelineData {
         };
     }
 
-    private static CachedUniform[] createUniformSet(CustomUniforms cu, IrisShaderPatch patch) {
+    private record UniformWritingHolder(String name, UniformType type, Long2ObjectFunction<LongConsumer> writingFactory) {
+
+    }
+    private static List<UniformWritingHolder> createUniformSet(CustomUniforms cu, IrisShaderPatch patch) {
         //This is a fking awful hack... but it works thinks
-        LocationalUniformHolder uniformBuilder = new LocationalUniformHolder() {
+
+        List<UniformWritingHolder> uniforms = new ArrayList<>();
+        Set<String> seenUniforms = new HashSet<>();
+        DynamicLocationalUniformHolder uniformBuilder = new DynamicLocationalUniformHolder() {
+            @Override
+            public DynamicLocationalUniformHolder uniform1i(UniformUpdateFrequency updateFrequency, String name, IntSupplier value) {
+                return this.uniform1i(name, value, null);
+            }
+
+            @Override
+            public DynamicLocationalUniformHolder uniform1i(String name, IntSupplier value, ValueUpdateNotifier notifier) {
+                this.injectDynamicUniformType(name, UniformType.INT, offset->{
+                    return ptr->{
+                        MemoryUtil.memPutInt(ptr+offset, value.getAsInt());
+                    };
+                });
+                return this;
+            }
+
+
+            @Override
+            public DynamicLocationalUniformHolder uniform1f(UniformUpdateFrequency updateFrequency, String name, FloatSupplier value) {
+                return this.uniform1f(name, value, null);
+            }
+
+            @Override
+            public DynamicLocationalUniformHolder uniform1f(String name, FloatSupplier value, ValueUpdateNotifier notifier) {
+                this.injectDynamicUniformType(name, UniformType.FLOAT, offset->{
+                    return ptr->{
+                        MemoryUtil.memPutFloat(ptr+offset, value.getAsFloat());
+                    };
+                });
+                return this;
+            }
+
+
+            @Override
+            public DynamicLocationalUniformHolder uniform3f(UniformUpdateFrequency updateFrequency, String name, Supplier<Vector3f> value) {
+                return this.uniform3f(name, value, null);
+            }
+
+            @Override
+            public DynamicLocationalUniformHolder uniform3f(String name, Supplier<Vector3f> value, ValueUpdateNotifier notifier) {
+                this.injectDynamicUniformType(name, UniformType.VEC3, offset->{
+                    return ptr->{
+                      value.get().getToAddress(ptr+offset);
+                    };
+                });
+                return this;
+            }
+
+            private void injectDynamicUniformType(String name, UniformType type, Long2ObjectFunction<LongConsumer> supplier) {
+                var names = patch.getUniformList();
+                for (int i = 0; i < names.length; i++) {
+                    if (names[i].equals(name)) {
+                        if (!seenUniforms.add(name)) {
+                            throw new IllegalArgumentException("Already added uniform: " + name);
+                        }
+                        uniforms.add(new UniformWritingHolder(name, type, supplier));
+                        break;
+                    }
+                }
+            }
+
+            @Override
+            public DynamicLocationalUniformHolder addDynamicUniform(Uniform uniform, ValueUpdateNotifier valueUpdateNotifier) {
+                throw new IllegalStateException("Type not implemented for uniform: " + uniform);
+                //return this;
+            }
+
             @Override
             public LocationalUniformHolder addUniform(UniformUpdateFrequency uniformUpdateFrequency, Uniform uniform) {
                 return this;
@@ -296,31 +391,36 @@ public class IrisVoxyRenderPipelineData {
                 return null;
             }
         };
+        CommonUniforms.addDynamicUniforms(uniformBuilder, FogMode.PER_FRAGMENT);
         cu.assignTo(uniformBuilder);
         cu.mapholderToPass(uniformBuilder, patch);
 
-        CachedUniform[] uniforms = new CachedUniform[patch.getUniformList().length];
-        ((CustomUniformsAccessor)cu).getLocationMap().get(patch).object2IntEntrySet().forEach(entry->uniforms[entry.getIntValue()] = entry.getKey());
-        int i = 0;
-        int j = 0;
-        for (var uniform : uniforms) {
-            if (uniform == null) {
-                Logger.error("Unknown uniform at location "+j + " skipping");
-            } else {
-                uniforms[i++] = uniform;//This shuffles the uniforms down till its compacted
+        FunctionReturn cachedReturn = new FunctionReturn();
+        ((CustomUniformsAccessor)cu).getLocationMap().get(patch).object2IntEntrySet().forEach(entry-> {
+            if (!seenUniforms.add(entry.getKey().getName())) {
+                throw new IllegalArgumentException("Already added uniform: " + entry.getKey().getName());
             }
-            j++;
+            uniforms.add(new UniformWritingHolder(entry.getKey().getName(), Type.convert(entry.getKey().getType()),offset->createWriter(offset, cachedReturn, entry.getKey())));
+        });
+
+        if (uniforms.size() != patch.getUniformList().length) {
+            Set<String> uniformsUnseen = new HashSet<>(List.of(patch.getUniformList()));
+            for (var uniform : uniforms) {
+                uniformsUnseen.remove(uniform.name);
+            }
+            Logger.error("The following uniforms could not be found: [" + uniformsUnseen.stream().sorted(String::compareToIgnoreCase).collect(Collectors.joining(","))+"]");
         }
         //In _theory_ this should work?
-        return Arrays.copyOf(uniforms, i);
+        return uniforms;
     }
 
-    private record TextureWSampler(String name, IntSupplier texture, int sampler) { }
+    private record TextureWSampler(String name, IntSupplier texture, IntSupplier sampler) { }
     public record ImageSet(String layout, IntConsumer bindingFunction) {
 
     }
     private static ImageSet createImageSet(IrisRenderingPipeline ipipe, IrisShaderPatch patch) {
         var samplerDataSet = patch.getSamplerSet();
+        if (samplerDataSet == null) return null;
         Set<String> samplerNameSet = new LinkedHashSet<>(samplerDataSet.keySet());
         if (samplerNameSet.isEmpty()) return null;
         Set<TextureWSampler> samplerSet = new LinkedHashSet<>();
@@ -345,27 +445,30 @@ public class IrisVoxyRenderPipelineData {
             }
 
             @Override
-            public boolean addDefaultSampler(TextureType type, IntSupplier texture, ValueUpdateNotifier notifier, GlSampler sampler, String... names) {
+            public boolean addDefaultSampler(TextureType type, IntSupplier texture, ValueUpdateNotifier notifier, Supplier<GlSampler> sampler, String... names) {
                 Logger.error("Unsupported default sampler");
                 return false;
             }
 
             @Override
-            public boolean addDynamicSampler(TextureType type, IntSupplier texture, GlSampler sampler, String... names) {
+            public boolean addDynamicSampler(TextureType type, IntSupplier texture, Supplier<GlSampler> sampler, String... names) {
                 return this.addDynamicSampler(type, texture, null, sampler, names);
             }
 
             @Override
-            public boolean addDynamicSampler(TextureType type, IntSupplier texture, ValueUpdateNotifier notifier, GlSampler sampler, String... names) {
+            public boolean addDynamicSampler(TextureType type, IntSupplier texture, ValueUpdateNotifier notifier, Supplier<GlSampler> sampler, String... names) {
                 if (!this.hasSampler(names)) return false;
-                samplerSet.add(new TextureWSampler(this.name(names), texture, sampler!=null?sampler.getId():-1));
+                samplerSet.add(new TextureWSampler(this.name(names), texture, sampler!=null?()->{
+                    var s = sampler.get();
+                    return s!=null?s.getId():-1;
+                }:()->-1));
                 return true;
             }
 
             @Override
             public void addExternalSampler(int texture, String... names) {
                 if (!this.hasSampler(names)) return;
-                samplerSet.add(new TextureWSampler(this.name(names), ()->texture, -1));
+                samplerSet.add(new TextureWSampler(this.name(names), ()->texture, ()->-1));
             }
         };
 
@@ -386,7 +489,7 @@ public class IrisVoxyRenderPipelineData {
 
         //samplerSet contains our samplers
         if (samplerSet.size() != samplerNameSet.size()) {
-            Logger.error("Did not find all requested samplers. Found [" + samplerSet.stream().map(a->a.name).collect(Collectors.joining()) + "] expected " + samplerNameSet);
+            Logger.error("Did not find all requested samplers. Found [" + samplerSet.stream().map(a->a.name).collect(Collectors.joining(", ")) + "] expected " + samplerNameSet);
         }
 
         //TODO: generate a layout (defines) for all the samplers with the correct types
@@ -408,8 +511,9 @@ public class IrisVoxyRenderPipelineData {
                 int unit = j+base;
                 var ts = samplers[j];
                 glBindTextureUnit(unit, ts.texture.getAsInt());
-                if (ts.sampler != -1) {
-                    glBindSampler(unit, ts.sampler);
+                int sampler = ts.sampler.getAsInt();
+                if (sampler != -1) {
+                    glBindSampler(unit, sampler);
                 }//TODO: might need to bind sampler 0
             }
         };

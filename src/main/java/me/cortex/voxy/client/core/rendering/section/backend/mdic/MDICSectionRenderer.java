@@ -1,7 +1,8 @@
-package me.cortex.voxy.client.core.rendering.section;
+package me.cortex.voxy.client.core.rendering.section.backend.mdic;
 
 
 import me.cortex.voxy.client.RenderStatistics;
+import me.cortex.voxy.client.VoxyClient;
 import me.cortex.voxy.client.core.AbstractRenderPipeline;
 import me.cortex.voxy.client.core.gl.Capabilities;
 import me.cortex.voxy.client.core.gl.GlBuffer;
@@ -10,6 +11,7 @@ import me.cortex.voxy.client.core.gl.shader.Shader;
 import me.cortex.voxy.client.core.gl.shader.ShaderLoader;
 import me.cortex.voxy.client.core.gl.shader.ShaderType;
 import me.cortex.voxy.client.core.model.ModelStore;
+import me.cortex.voxy.client.core.rendering.section.backend.AbstractSectionRenderer;
 import me.cortex.voxy.client.core.rendering.section.geometry.BasicSectionGeometryData;
 import me.cortex.voxy.client.core.rendering.util.DownloadStream;
 import me.cortex.voxy.client.core.rendering.util.LightMapHelper;
@@ -17,7 +19,8 @@ import me.cortex.voxy.client.core.rendering.util.SharedIndexBuffer;
 import me.cortex.voxy.client.core.rendering.util.UploadStream;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.world.WorldEngine;
-import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.Direction;
 import org.joml.Matrix4f;
 import org.lwjgl.system.MemoryUtil;
 
@@ -40,6 +43,8 @@ import static org.lwjgl.opengl.NVRepresentativeFragmentTest.GL_REPRESENTATIVE_FR
 
 //Uses MDIC to render the sections
 public class MDICSectionRenderer extends AbstractSectionRenderer<MDICViewport, BasicSectionGeometryData> {
+    public static final Factory<MDICViewport, BasicSectionGeometryData> FACTORY = AbstractSectionRenderer.Factory.create(MDICSectionRenderer.class);
+
     private static final int TRANSLUCENT_OFFSET = 400_000;//in draw calls
     private static final int TEMPORAL_OFFSET = 500_000;//in draw calls
     private static final int STATISTICS_BUFFER_BINDING = 8;
@@ -95,7 +100,7 @@ public class MDICSectionRenderer extends AbstractSectionRenderer<MDICViewport, B
         this.pipeline = pipeline;
         //The pipeline can be used to transform the renderer in abstract ways
 
-        String vertex = ShaderLoader.parse("voxy:lod/gl46/quads2.vert");
+        String vertex = ShaderLoader.parse("voxy:lod/gl46/quads3.vert");
         String taa = pipeline.taaFunction("taaShift");
         if (taa != null) {
             vertex += "\n"+taa;//inject it at the end
@@ -104,9 +109,13 @@ public class MDICSectionRenderer extends AbstractSectionRenderer<MDICViewport, B
                 .defineIf("TAA_PATCH", taa != null)
                 .defineIf("DEBUG_RENDER", false)
 
-                .defineIf("DARKENED_TINTING", MinecraftClient.getInstance().world.getDimensionEffects().isDarkened())//TODO: FIXME: this is really jank atm
+                //.defineIf("DARKENED_TINTING", MinecraftClient.getInstance().world.getDimensionEffects().isDarkened())//TODO: FIXME: this is really jank atm
+                //.defineIf("USE_NV_BARRY", Capabilities.INSTANCE.nvBarryCoords)
 
                 .addSource(ShaderType.VERTEX, vertex);
+
+        //Apply per face tinting
+        addDirectionalFaceTint(builder, Minecraft.getInstance().level);
 
         String frag = ShaderLoader.parse("voxy:lod/gl46/quads.frag");
 
@@ -117,28 +126,9 @@ public class MDICSectionRenderer extends AbstractSectionRenderer<MDICViewport, B
         this.terrainShader = tryCompilePatchedOrNormal(builder, opaqueFrag, frag);
 
         String translucentFrag = pipeline.patchTranslucentShader(this, frag);
-        if (translucentFrag != null) {
-            this.translucentTerrainShader = tryCompilePatchedOrNormal(builder, translucentFrag, frag);
-        } else {
-            this.translucentTerrainShader = this.terrainShader;
-        }
-    }
+        translucentFrag = translucentFrag==null?frag:translucentFrag;
 
-    private static Shader tryCompilePatchedOrNormal(Shader.Builder<?> builder, String shader, String original) {
-        boolean patched = shader != original;//This is the correct comparison type (reference)
-        try {
-            return builder.clone()
-                    .defineIf("PATCHED_SHADER", patched)
-                    .addSource(ShaderType.FRAGMENT, shader)
-                    .compile();
-        } catch (RuntimeException e) {
-            if (patched) {
-                Logger.error("Failed to compile shader patch, using normal pipeline to prevent errors", e);
-                return tryCompilePatchedOrNormal(builder, original, original);
-            } else {
-                throw e;
-            }
-        }
+        this.translucentTerrainShader = tryCompilePatchedOrNormal(builder.define("TRANSLUCENT"), translucentFrag, frag);
     }
 
     private void uploadUniformBuffer(MDICViewport viewport) {
@@ -180,6 +170,7 @@ public class MDICSectionRenderer extends AbstractSectionRenderer<MDICViewport, B
 
 
         glDisable(GL_CULL_FACE);
+        glDisable(GL_BLEND);
         glEnable(GL_DEPTH_TEST);
         this.terrainShader.bind();
         glBindVertexArray(GlVertexArray.STATIC_VAO);//Needs to be before binding
@@ -188,7 +179,14 @@ public class MDICSectionRenderer extends AbstractSectionRenderer<MDICViewport, B
 
         glMemoryBarrier(GL_COMMAND_BARRIER_BIT|GL_SHADER_STORAGE_BARRIER_BIT);//Barrier everything is needed
         glProvokingVertex(GL_FIRST_VERTEX_CONVENTION);
+
+        if (VoxyClient.getOcclusionDebugState()==3) {
+            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        }
         glMultiDrawElementsIndirectCountARB(GL_TRIANGLES, GL_UNSIGNED_SHORT, indirectOffset, drawCountOffset, maxDrawCount, 0);
+        if (VoxyClient.getOcclusionDebugState()==3) {
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        }
 
         glEnable(GL_CULL_FACE);
         glBindVertexArray(0);
@@ -360,11 +358,9 @@ public class MDICSectionRenderer extends AbstractSectionRenderer<MDICViewport, B
 
     @Override
     public void free() {
-        if (this.terrainShader != this.translucentTerrainShader) {
-            this.translucentTerrainShader.free();
-        }
         this.uniform.free();
         this.distanceCountBuffer.free();
+        this.translucentTerrainShader.free();
         this.terrainShader.free();
         this.commandGenShader.free();
         this.cullShader.free();

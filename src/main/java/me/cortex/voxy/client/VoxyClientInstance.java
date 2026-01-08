@@ -2,7 +2,9 @@ package me.cortex.voxy.client;
 
 import me.cortex.voxy.client.compat.FlashbackCompat;
 import me.cortex.voxy.client.config.VoxyConfig;
+import me.cortex.voxy.client.mixin.sodium.AccessorSodiumWorldRenderer;
 import me.cortex.voxy.common.Logger;
+import me.cortex.voxy.common.StorageConfigUtil;
 import me.cortex.voxy.common.config.ConfigBuildCtx;
 import me.cortex.voxy.common.config.Serialization;
 import me.cortex.voxy.common.config.compressors.ZSTDCompressor;
@@ -17,12 +19,13 @@ import me.cortex.voxy.commonImpl.WorldIdentifier;
 
 import static me.cortex.voxy.commonImpl.WorldIdentifier.getWorldId;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.util.WorldSavePath;
-
 import org.apache.commons.lang3.StringUtils;
 
 import java.io.File;
+import net.caffeinemc.mods.sodium.client.render.SodiumWorldRenderer;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.level.storage.LevelResource;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -33,14 +36,31 @@ public class VoxyClientInstance extends VoxyInstance {
     private final Path basePath;
     private final boolean noIngestOverride;
     public VoxyClientInstance() {
-        super(VoxyConfig.CONFIG.serviceThreads);
+        super();
         var path = FlashbackCompat.getReplayStoragePath();
         this.noIngestOverride = path != null;
         if (path == null) {
             path = getBasePath();
         }
         this.basePath = path;
-        this.storageConfig = getCreateStorageConfig(path);
+        this.storageConfig = StorageConfigUtil.getCreateStorageConfig(Config.class, c->c.version==1&&c.sectionStorageConfig!=null, ()->DEFAULT_STORAGE_CONFIG, path).sectionStorageConfig;
+        this.updateDedicatedThreads();
+    }
+
+    @Override
+    public void updateDedicatedThreads() {
+        int target = VoxyConfig.CONFIG.serviceThreads;
+        if (!VoxyConfig.CONFIG.dontUseSodiumBuilderThreads) {
+            var swr = SodiumWorldRenderer.instanceNullable();
+            if (swr != null) {
+                var rsm = ((AccessorSodiumWorldRenderer) swr).getRenderSectionManager();
+                if (rsm != null) {
+                    this.setNumThreads(Math.max(1, target - rsm.getBuilder().getTotalThreadCount()));
+                    return;
+                }
+            }
+        }
+        this.setNumThreads(target);
     }
 
     @Override
@@ -52,53 +72,18 @@ public class VoxyClientInstance extends VoxyInstance {
     protected SectionStorage createStorage(WorldIdentifier identifier) {
         var ctx = new ConfigBuildCtx();
         
-        File sharedFolder = basePath.resolveSibling(StringUtils.substringAfter(basePath.toFile().getName(), ".")).toFile();
-        String finalBasePath = sharedFolder.exists() && sharedFolder.isDirectory() ? sharedFolder.getAbsolutePath() : basePath.toString();
+        // File sharedFolder = basePath.resolveSibling(StringUtils.substringAfter(basePath.toFile().getName(), ".")).toFile();
+        // String finalBasePath = sharedFolder.exists() && sharedFolder.isDirectory() ? sharedFolder.getAbsolutePath() : basePath.toString();
 
-        ctx.setProperty(ConfigBuildCtx.BASE_SAVE_PATH, finalBasePath);
-        ctx.setProperty(ConfigBuildCtx.WORLD_IDENTIFIER, getWorldId(identifier));
+        // ctx.setProperty(ConfigBuildCtx.BASE_SAVE_PATH, finalBasePath);
+        // ctx.setProperty(ConfigBuildCtx.WORLD_IDENTIFIER, getWorldId(identifier));
+
+        ctx.setProperty(ConfigBuildCtx.BASE_SAVE_PATH, this.basePath.toString()); // comment these two for unified folder lod
+        ctx.setProperty(ConfigBuildCtx.WORLD_IDENTIFIER, identifier.getWorldId()); // and uncomment the four ones above
 
         ctx.pushPath(ConfigBuildCtx.DEFAULT_STORAGE_PATH);
 
         return this.storageConfig.build(ctx);
-    }
-
-    public static SectionStorageConfig getCreateStorageConfig(Path path) {
-        try {
-            Files.createDirectories(path);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-        var json = path.resolve("config.json");
-        Config config = null;
-        if (Files.exists(json)) {
-            try {
-                config = Serialization.GSON.fromJson(Files.readString(json), Config.class);
-                if (config == null) {
-                    Logger.error("Config deserialization null, reverting to default");
-                } else {
-                    if (config.sectionStorageConfig == null) {
-                        Logger.error("Config section storage null, reverting to default");
-                        config = null;
-                    }
-                }
-            } catch (Exception e) {
-                Logger.error("Failed to load the storage configuration file, resetting it to default, this will probably break your save if you used a custom storage config", e);
-            }
-        }
-
-        if (config == null) {
-            config = DEFAULT_STORAGE_CONFIG;
-        }
-        try {
-            Files.writeString(json, Serialization.GSON.toJson(config));
-        } catch (Exception e) {
-            throw new RuntimeException("Failed write the config, aborting!", e);
-        }
-        if (config == null) {
-            throw new IllegalStateException("Config is still null\n");
-        }
-        return config.sectionStorageConfig;
     }
 
     public Path getStorageBasePath() {
@@ -107,46 +92,33 @@ public class VoxyClientInstance extends VoxyInstance {
 
     @Override
     public boolean isIngestEnabled(WorldIdentifier worldId) {
-        return !this.noIngestOverride;
+        return (!this.noIngestOverride) && VoxyConfig.CONFIG.ingestEnabled;
     }
 
     private static class Config {
         public int version = 1;
         public SectionStorageConfig sectionStorageConfig;
     }
+
     private static final Config DEFAULT_STORAGE_CONFIG;
     static {
         var config = new Config();
-
-        //Load the default config
-        var baseDB = new RocksDBStorageBackend.Config();
-
-        var compressor = new ZSTDCompressor.Config();
-        compressor.compressionLevel = 1;
-
-        var compression = new CompressionStorageAdaptor.Config();
-        compression.delegate = baseDB;
-        compression.compressor = compressor;
-
-        var serializer = new SectionSerializationStorage.Config();
-        serializer.storage = compression;
-        config.sectionStorageConfig = serializer;
-
+        config.sectionStorageConfig = StorageConfigUtil.createDefaultSerializer();
         DEFAULT_STORAGE_CONFIG = config;
     }
 
     private static Path getBasePath() {
-        Path basePath = MinecraftClient.getInstance().runDirectory.toPath().resolve(".voxy").resolve("saves");
-        var iserver = MinecraftClient.getInstance().getServer();
+        Path basePath = Minecraft.getInstance().gameDirectory.toPath().resolve(".voxy").resolve("saves");
+        var iserver = Minecraft.getInstance().getSingleplayerServer();
         if (iserver != null) {
-            basePath = iserver.getSavePath(WorldSavePath.ROOT).resolve("voxy");
+            basePath = iserver.getWorldPath(LevelResource.ROOT).resolve("voxy");
         } else {
-            var netHandle = MinecraftClient.getInstance().interactionManager;
+            var netHandle = Minecraft.getInstance().gameMode;
             if (netHandle == null) {
                 Logger.error("Network handle null");
                 basePath = basePath.resolve("UNKNOWN");
             } else {
-                var info = netHandle.networkHandler.getServerInfo();
+                var info = netHandle.connection.getServerData();
                 if (info == null) {
                     Logger.error("Server info null");
                     basePath = basePath.resolve("UNKNOWN");
@@ -154,7 +126,7 @@ public class VoxyClientInstance extends VoxyInstance {
                     if (info.isRealm()) {
                         basePath = basePath.resolve("realms");
                     } else {
-                        basePath = basePath.resolve(info.address.replace(":", "_"));
+                        basePath = basePath.resolve(info.ip.replace(":", "_"));
                     }
                 }
             }

@@ -39,7 +39,7 @@ bool checkPointInView(vec4 point) {
 
 vec3 minBB = vec3(0.0f);
 vec3 maxBB = vec3(0.0f);
-bool insideFrustum = false;
+bool frustumCulled = false;
 
 float screenSize = 0.0f;
 
@@ -60,10 +60,10 @@ void setupScreenspace(in UnpackedNode node) {
 
     vec3 basePos = vec3(((node.pos<<node.lodLevel)-camSecPos)<<5)-camSubSecPos;
 
-    insideFrustum = !outsideFrustum(frustum, basePos, float(32<<node.lodLevel));
+    frustumCulled = outsideFrustum(frustum, basePos, float(32<<node.lodLevel));
 
     //Fast exit
-    if (!insideFrustum) {
+    if (frustumCulled) {
         return;
     }
 
@@ -122,12 +122,15 @@ void setupScreenspace(in UnpackedNode node) {
 
 //Checks if the node is implicitly culled (outside frustum)
 bool outsideFrustum() {
-    return !insideFrustum;// maxW < 16 is a trick where 16 is the near plane
+    return frustumCulled;// maxW < 16 is a trick where 16 is the near plane
 
     //|| any(lessThanEqual(minBB, vec3(0.0f, 0.0f, 0.0f))) || any(lessThanEqual(vec3(1.0f, 1.0f, 1.0f), maxBB));
 }
 
 bool isCulledByHiz() {
+    //Things start breaking down if the area is the entire scree, no idea why, just abort if we hit this case
+    if ((maxBB.xy-minBB.xy)==vec2(1.0f)) return false;
+
     ivec2 ssize = ivec2(packedHizSize>>16,packedHizSize&0xFFFF);
     vec2 size = (maxBB.xy-minBB.xy)*ssize;
     float miplevel = log2(max(max(size.x, size.y),1));

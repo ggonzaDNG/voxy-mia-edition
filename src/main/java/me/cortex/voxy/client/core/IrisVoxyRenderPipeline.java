@@ -7,7 +7,7 @@ import me.cortex.voxy.client.core.rendering.hierachical.AsyncNodeManager;
 import me.cortex.voxy.client.core.rendering.hierachical.HierarchicalOcclusionTraverser;
 import me.cortex.voxy.client.core.rendering.hierachical.NodeCleaner;
 import me.cortex.voxy.client.core.rendering.post.FullscreenBlit;
-import me.cortex.voxy.client.core.rendering.section.AbstractSectionRenderer;
+import me.cortex.voxy.client.core.rendering.section.backend.AbstractSectionRenderer;
 import me.cortex.voxy.client.core.rendering.util.DepthFramebuffer;
 import me.cortex.voxy.client.core.rendering.util.UploadStream;
 import me.cortex.voxy.client.iris.IrisVoxyRenderPipelineData;
@@ -26,13 +26,12 @@ import static org.lwjgl.opengl.GL45C.*;
 public class IrisVoxyRenderPipeline extends AbstractRenderPipeline {
     private final IrisVoxyRenderPipelineData data;
     private final FullscreenBlit depthBlit = new FullscreenBlit("voxy:post/blit_texture_depth_cutout.frag");
-    public final DepthFramebuffer fb = new DepthFramebuffer(GL_DEPTH24_STENCIL8);
-    public final DepthFramebuffer fbTranslucent = new DepthFramebuffer(GL_DEPTH24_STENCIL8);
+    public final DepthFramebuffer fbTranslucent = new DepthFramebuffer(this.fb.getFormat());
 
     private final GlBuffer shaderUniforms;
 
     public IrisVoxyRenderPipeline(IrisVoxyRenderPipelineData data, AsyncNodeManager nodeManager, NodeCleaner nodeCleaner, HierarchicalOcclusionTraverser traversal, BooleanSupplier frexSupplier) {
-        super(nodeManager, nodeCleaner, traversal, frexSupplier);
+        super(nodeManager, nodeCleaner, traversal, frexSupplier, data.shouldDeferTranslucency());
         this.data = data;
         if (this.data.thePipeline != null) {
             throw new IllegalStateException("Pipeline data already bound");
@@ -79,7 +78,6 @@ public class IrisVoxyRenderPipeline extends AbstractRenderPipeline {
         this.data.thePipeline = null;
 
         this.depthBlit.delete();
-        this.fb.free();
         this.fbTranslucent.free();
 
         if (this.shaderUniforms != null) {
@@ -113,7 +111,7 @@ public class IrisVoxyRenderPipeline extends AbstractRenderPipeline {
             glClear(GL_COLOR_BUFFER_BIT);
         }
 
-        if (this.data.useViewportDims) {
+        if (!this.data.useViewportDims) {
             srcWidth = viewport.width;
             srcHeight = viewport.height;
         }
@@ -144,6 +142,10 @@ public class IrisVoxyRenderPipeline extends AbstractRenderPipeline {
                     this.fbTranslucent.getDepthTex().id, sourceFrameBuffer,
                     viewport, new Matrix4f(viewport.vanillaProjection).mul(viewport.modelView));
             glColorMask(true, true, true, true);
+        } else {
+            // normally disabled by AbstractRenderPipeline but since we are skipping it we do it here
+            glDisable(GL_STENCIL_TEST);
+            glDisable(GL_DEPTH_TEST);
         }
     }
 

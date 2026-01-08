@@ -4,10 +4,6 @@ package me.cortex.voxy.client.core.model;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.world.other.Mapper;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.util.Identifier;
-
 import java.util.List;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -27,49 +23,31 @@ public class ModelBakerySubsystem {
     private final Mapper mapper;
     private final AtomicInteger blockIdCount = new AtomicInteger();
     private final ConcurrentLinkedDeque<Integer> blockIdQueue = new ConcurrentLinkedDeque<>();//TODO: replace with custom DS
-    private final ConcurrentLinkedDeque<Mapper.BiomeEntry> biomeQueue = new ConcurrentLinkedDeque<>();
 
+    private final Thread processingThread;
+    private volatile boolean isRunning = true;
     public ModelBakerySubsystem(Mapper mapper) {
         this.mapper = mapper;
         this.factory = new ModelFactory(mapper, this.storage);
+        this.processingThread = new Thread(()->{//TODO replace this with something good/integrate it into the async processor so that we just have less threads overall
+            while (this.isRunning) {
+                this.factory.processAllThings();
+                try {
+                    Thread.sleep(10);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        }, "Model factory processor");
+        this.processingThread.start();
     }
 
     public void tick(long totalBudget) {
-        //Upload all biomes
-        while (!this.biomeQueue.isEmpty()) {
-            var biome = this.biomeQueue.poll();
-            var biomeReg = MinecraftClient.getInstance().world.getRegistryManager().getOrThrow(RegistryKeys.BIOME);
-            this.factory.addBiome(biome.id, biomeReg.get(Identifier.of(biome.biome)));
-        }
-
-
-        /*
-        //There should be a method to access the frame time IIRC, if the user framecap is unlimited lock it to like 60 fps for computation
-        int BUDGET = 16;//TODO: make this computed based on the remaining free time in a frame (and like div by 2 to reduce overhead) (with a min of 1)
-        if (!this.blockIdQueue.isEmpty()) {
-            int[] est = new int[Math.min(this.blockIdQueue.size(), BUDGET)];
-            int i = 0;
-            synchronized (this.blockIdQueue) {
-                for (;i < est.length && !this.blockIdQueue.isEmpty(); i++) {
-                    int blockId = this.blockIdQueue.removeFirstInt();
-                    if (blockId == -1) {
-                        i--;
-                        continue;
-                    }
-                    est[i] = blockId;
-                }
-            }
-
-            for (int j = 0; j < i; j++) {
-                this.factory.addEntry(est[j]);
-            }
-        }*/
-        //TimingStatistics.modelProcess.start();
-        if (this.blockIdCount.get() != 0) {
-            long budget = Math.min(totalBudget-150_000, totalBudget-(this.factory.resultJobs.size()*10_000L))-150_000;
-
-            //Always do 1 iteration minimum
-            Integer i = this.blockIdQueue.poll();
+        long start = System.nanoTime();
+        this.factory.tickAndProcessUploads();
+        //Always do 1 iteration minimum
+        Integer i = this.blockIdQueue.poll();
+        if (i != null) {
             int j = 0;
             if (i != null) {
                 int fbBinding = glGetInteger(GL_FRAMEBUFFER_BINDING);
@@ -77,7 +55,7 @@ public class ModelBakerySubsystem {
                 do {
                     this.factory.addEntry(i);
                     j++;
-                    if (24<j)//budget<(System.nanoTime() - start)+1000
+                    if (4<j&&(totalBudget<(System.nanoTime() - start)+50_000))//20<j||
                         break;
                     i = this.blockIdQueue.poll();
                 } while (i != null);
@@ -87,18 +65,17 @@ public class ModelBakerySubsystem {
             this.blockIdCount.addAndGet(-j);
         }
 
-        this.factory.tick();
-
-        long start = System.nanoTime();
-        while (!this.factory.resultJobs.isEmpty()) {
-            this.factory.resultJobs.poll().run();
-            if (totalBudget<(System.nanoTime()-start))
-                break;
-        }
         //TimingStatistics.modelProcess.stop();
     }
 
     public void shutdown() {
+        this.isRunning = false;
+        try {
+            this.processingThread.join();
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+
         this.factory.free();
         this.storage.free();
     }
@@ -122,7 +99,7 @@ public class ModelBakerySubsystem {
     }
 
     public void addBiome(Mapper.BiomeEntry biomeEntry) {
-        this.biomeQueue.add(biomeEntry);
+        this.factory.addBiome(biomeEntry);
     }
 
     public void addDebugData(List<String> debug) {
@@ -134,7 +111,7 @@ public class ModelBakerySubsystem {
     }
 
     public boolean areQueuesEmpty() {
-        return this.blockIdCount.get()==0 && this.factory.getInflightCount() == 0 && this.biomeQueue.isEmpty();
+        return this.blockIdCount.get()==0 && this.factory.getInflightCount() == 0;
     }
 
     public int getProcessingCount() {

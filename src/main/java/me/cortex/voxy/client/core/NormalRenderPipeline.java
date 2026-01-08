@@ -11,7 +11,7 @@ import me.cortex.voxy.client.core.rendering.hierachical.HierarchicalOcclusionTra
 import me.cortex.voxy.client.core.rendering.hierachical.NodeCleaner;
 import me.cortex.voxy.client.core.rendering.post.FullscreenBlit;
 import me.cortex.voxy.client.core.rendering.util.DepthFramebuffer;
-import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.Minecraft;
 import org.joml.Matrix4f;
 import org.lwjgl.system.MemoryStack;
 
@@ -37,7 +37,6 @@ public class NormalRenderPipeline extends AbstractRenderPipeline {
     private GlTexture colourTex;
     private GlTexture colourSSAOTex;
     private final GlFramebuffer fbSSAO = new GlFramebuffer();
-    private final DepthFramebuffer fb = new DepthFramebuffer(GL_DEPTH24_STENCIL8);
 
     private final boolean useEnvFog;
     private final FullscreenBlit finalBlit;
@@ -47,7 +46,7 @@ public class NormalRenderPipeline extends AbstractRenderPipeline {
             .compile();
 
     protected NormalRenderPipeline(AsyncNodeManager nodeManager, NodeCleaner nodeCleaner, HierarchicalOcclusionTraverser traversal, BooleanSupplier frexSupplier) {
-        super(nodeManager, nodeCleaner, traversal, frexSupplier);
+        super(nodeManager, nodeCleaner, traversal, frexSupplier, false);
         this.useEnvFog = VoxyConfig.CONFIG.useEnvironmentalFog;
         this.finalBlit = new FullscreenBlit("voxy:post/blit_texture_depth_cutout.frag",
                 a->a.defineIf("USE_ENV_FOG", this.useEnvFog).define("EMIT_COLOUR"));
@@ -66,7 +65,7 @@ public class NormalRenderPipeline extends AbstractRenderPipeline {
             this.colourSSAOTex = new GlTexture().store(GL_RGBA8, 1, viewport.width, viewport.height);
 
             this.fb.framebuffer.bind(GL_COLOR_ATTACHMENT0, this.colourTex).verify();
-            this.fbSSAO.bind(GL_DEPTH_STENCIL_ATTACHMENT, this.fb.getDepthTex()).bind(GL_COLOR_ATTACHMENT0, this.colourSSAOTex).verify();
+            this.fbSSAO.bind(this.fb.getDepthAttachmentType(), this.fb.getDepthTex()).bind(GL_COLOR_ATTACHMENT0, this.colourSSAOTex).verify();
 
 
             glTextureParameterf(this.colourTex.id, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -108,10 +107,17 @@ public class NormalRenderPipeline extends AbstractRenderPipeline {
         if (this.useEnvFog) {
             float start = viewport.fogParameters.environmentalStart();
             float end = viewport.fogParameters.environmentalEnd();
-            float invEndFogDelta = 1f/(end-start);
-            float endDistance = MinecraftClient.getInstance().gameRenderer.getViewDistanceBlocks()*1.5f;
-            glUniform3f(4, endDistance, invEndFogDelta, Math.abs(start)*invEndFogDelta);
-            glUniform3f(5, viewport.fogParameters.red(), viewport.fogParameters.green(), viewport.fogParameters.blue());
+            if (Math.abs(end-start)>1) {
+                float invEndFogDelta = 1f / (end - start);
+                float endDistance = Math.max(Minecraft.getInstance().gameRenderer.getRenderDistance(), 20*16);//TODO: make this constant a config option
+                endDistance *= (float)Math.sqrt(3);
+                float startDelta = -start * invEndFogDelta;
+                glUniform4f(4, invEndFogDelta, startDelta, Math.clamp(endDistance*invEndFogDelta+startDelta, 0, 1),0);//
+                glUniform4f(5, viewport.fogParameters.red(), viewport.fogParameters.green(), viewport.fogParameters.blue(), viewport.fogParameters.alpha());
+            } else {
+                glUniform4f(4, 0, 0, 0, 0);
+                glUniform4f(5, 0, 0, 0, 0);
+            }
         }
 
         glBindTextureUnit(3, this.colourSSAOTex.id);
@@ -139,7 +145,6 @@ public class NormalRenderPipeline extends AbstractRenderPipeline {
     public void free() {
         this.finalBlit.delete();
         this.ssaoCompute.free();
-        this.fb.free();
         this.fbSSAO.free();
         if (this.colourTex != null) {
             this.colourTex.free();
