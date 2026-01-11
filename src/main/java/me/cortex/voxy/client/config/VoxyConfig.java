@@ -31,7 +31,6 @@ public class VoxyConfig {
     public float subDivisionSize = 64;
     public boolean useEnvironmentalFog = true;
     public boolean dontUseSodiumBuilderThreads = false;
-    public boolean abyssCoords = true;
 
     public static VoxyConfig loadOrCreate() {
         if (VoxyCommon.isAvailable()) {

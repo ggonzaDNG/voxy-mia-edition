@@ -1,9 +1,8 @@
-package main.java.me.cortex.voxy.client;
+package me.cortex.voxy.client;
 
 import me.cortex.voxy.client.core.IGetVoxyRenderSystem;
 import me.cortex.voxy.client.core.VoxyRenderSystem;
 import me.cortex.voxy.commonImpl.VoxyCommon;
-import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.debug.DebugScreenDisplayer;
 import net.minecraft.client.gui.components.debug.DebugScreenEntry;
@@ -34,7 +33,7 @@ public class VoxyAbyssDebugScreenEntry implements DebugScreenEntry {
         if (vrs != null) {
             List<String> AbyssCoords = new ArrayList<>();
             vrs.addDebugInfo_Abyss(AbyssCoords);
-            lines.addToGroup(Identifier.fromNamespaceAndPath("voxy", "abyss_coords"), AbyssCoords);
+            lines.addToGroup(Identifier.fromNamespaceAndPath("voxy", "abyssCoords"), AbyssCoords);
         }
     }
 

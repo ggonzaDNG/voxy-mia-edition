@@ -128,17 +128,9 @@ public class VoxyConfigMenu implements ConfigEntryPoint {
                                         "voxy:render_debug",
                                         Component.translatable("voxy.config.general.render_statistics"),
                                         ()-> RenderStatistics.enabled, v->RenderStatistics.enabled=v)
-                                        .setPostChangeFlags(RENDER_RELOAD)
-                        ), new Group(
-                                new BoolOption(
-                                    "voxy:abyss_coords",
-                                    Component.translatable("voxy.config.general.abyss_coords"),
-                                    ()->CFG.abyssCoords, v->CFG.abyssCoords=v)
-                                    .setPostChangeFlags(RENDER_RELOAD))
+                                        .setPostChangeFlags(RENDER_RELOAD))
                 ).setEnablerAND("voxy:enabled", "voxy:rendering"));
-
     }
-
 
     private static final int SUBDIV_IN_MAX = 100;
     private static final double SUBDIV_MIN = 28;

@@ -22,6 +22,8 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.dimension.DimensionType;
 
+import me.cortex.voxy.client.core.util.AbyssLightZoneManager;
+
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -83,6 +85,9 @@ public class VoxyCommands {
 
         var r = Minecraft.getInstance().levelRenderer;
         if (r != null) r.allChanged();
+        
+        AbyssLightZoneManager.loadConfig();
+        
         return 0;
     }
 

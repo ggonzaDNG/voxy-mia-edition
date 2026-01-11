@@ -20,7 +20,8 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.chunk.LevelChunk;
 import org.jspecify.annotations.Nullable;
 
-import main.java.me.cortex.voxy.client.VoxyAbyssDebugScreenEntry;
+import me.cortex.voxy.client.VoxyAbyssDebugScreenEntry;
+import me.cortex.voxy.client.core.util.AbyssLightZoneManager;
 
 import java.util.HashSet;
 import java.util.function.Consumer;
@@ -92,7 +93,11 @@ public class VoxyClient implements ClientModInitializer {
                 } else {
                     FREX.remove(name);
                 }}));
+
+        AbyssLightZoneManager.loadConfig(); // abyss custom light zones
+        
     }
+
 
     public static boolean isFrexActive() {
         return !FREX.isEmpty();

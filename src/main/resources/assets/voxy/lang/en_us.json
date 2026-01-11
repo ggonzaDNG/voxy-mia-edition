@@ -32,8 +32,5 @@
   "voxy.config.general.render_fog.tooltip": "Enables or disables render fog effect",
 
   "voxy.config.general.render_statistics": "Enable render statistics",
-  "voxy.config.general.render_statistics.tooltip": "Enable render statistics in F3 menu, useful for debugging",
-
-  "voxy.config.general.abyss_coords": "Show real coordinates of The Abyss",
-  "voxy.config.general.abyss_coords.tooltip": "Enables or disables showing real coordinates of The Abyss in F3 \n(as of 1.21.11 you can see them without enabling F3, use F3+F6 to access the config menu and set 'abyss_coords' to 'Always')"
+  "voxy.config.general.render_statistics.tooltip": "Enable render statistics in F3 menu, useful for debugging"
 }

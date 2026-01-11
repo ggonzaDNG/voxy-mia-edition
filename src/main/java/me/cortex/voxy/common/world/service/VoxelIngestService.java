@@ -13,6 +13,8 @@ import me.cortex.voxy.commonImpl.WorldIdentifier;
 
 import me.cortex.voxy.client.core.util.AbyssUtil;
 
+import me.cortex.voxy.client.core.util.AbyssLightZoneManager;
+
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.chunk.DataLayer;
@@ -59,9 +61,11 @@ public class VoxelIngestService {
     @NotNull
     private static ILightingSupplier getLightingSupplier(IngestSection task) {
         final int blockX = task.cx * 16;
+        final int baseY = task.cy * 16;
+        final int baseZ = task.cz * 16;
+
         final int sectionIndex = AbyssUtil.getSection(blockX);
-        
-        final boolean forceDark = sectionIndex > 3; 
+        final boolean forceDark = sectionIndex > 3;
 
         ILightingSupplier supplier = (x, y, z) -> (byte) 0;
 
@@ -69,28 +73,32 @@ public class VoxelIngestService {
         var bla = task.blockLight;
         boolean sl = sla != null && !sla.isEmpty();
         boolean bl = bla != null && !bla.isEmpty();
-        if (sl || bl) {
-            if (sl && bl) {
-                supplier = (x, y, z) -> {
-                    int block = Math.min(15, bla.get(x, y, z));
-                    int sky = forceDark ? 0 : Math.min(15, sla.get(x, y, z));
-                    return (byte) (sky | (block << 4));
-                };
-            } else if (bl) {
-                supplier = (x, y, z) -> {
-                    int block = Math.min(15, bla.get(x, y, z));
-                    int sky = 0;
-                    return (byte) (sky | (block << 4));
-                };
+        
+        return (x, y, z) -> {
+
+        int blockLight = (bl) ? Math.min(15, bla.get(x, y, z)) : 0;
+        int skyLight;
+
+        int absX = blockX + x;
+        int absY = baseY + y;
+        int absZ = baseZ + z;
+
+        int zoneOverride = AbyssLightZoneManager.getZoneLightLevel(absX, absY, absZ);
+
+        if (zoneOverride != -1) {
+            skyLight = zoneOverride; // if we in a zone we put the zone skylight value
+        } else {
+            if (forceDark) {
+                // if we are not in a zone and under section 3 of the abyss we default to zero as before
+                skyLight = 0;
             } else {
-                supplier = (x,y,z)-> {
-                    int block = 0;
-                    int sky = forceDark ? 0 : Math.min(15, sla.get(x, y, z));
-                    return (byte) (sky | (block << 4));
-                };
+                // if we are not in a zone and not under section 3 of the abyss we default to the normal sky light value provided by the game
+                skyLight = (sl) ? Math.min(15, sla.get(x, y, z)) : 0;
             }
         }
-        return supplier;
+
+        return (byte) (skyLight | (blockLight << 4));
+        };
     }
 
     private static boolean shouldIngestSection(LevelChunkSection section, int cx, int cy, int cz) {
