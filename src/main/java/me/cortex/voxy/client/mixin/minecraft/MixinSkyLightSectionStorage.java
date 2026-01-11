@@ -12,13 +12,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(SkyLightSectionStorage.class)
 public abstract class MixinSkyLightSectionStorage {
 
-    /**
-     * getLightValue es el método final que extrae el valor del almacenamiento.
-     */
+    // if we dont inject here entities look weird for some reason
+    
     @Inject(method = "getLightValue", at = @At("HEAD"), cancellable = true)
     private void onGetLightValue(long blockPosLong, CallbackInfoReturnable<Integer> cir) {
-        // Convertimos el long de Minecraft a un BlockPos para usar tu Manager
-        // En tu Mixin, mejor haz esto para no crear objetos:
+
         int x = BlockPos.getX(blockPosLong);
         int y = BlockPos.getY(blockPosLong);
         int z = BlockPos.getZ(blockPosLong);
