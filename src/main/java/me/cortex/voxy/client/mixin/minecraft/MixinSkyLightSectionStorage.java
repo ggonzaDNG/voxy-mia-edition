@@ -13,7 +13,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class MixinSkyLightSectionStorage {
 
     // if we dont inject here entities look weird for some reason
-    
+
     @Inject(method = "getLightValue", at = @At("HEAD"), cancellable = true)
     private void onGetLightValue(long blockPosLong, CallbackInfoReturnable<Integer> cir) {
 
@@ -29,7 +29,7 @@ public abstract class MixinSkyLightSectionStorage {
 
         // 2. Lógica del Abismo
         if (AbyssUtil.getSection(x) > 3) {
-            cir.setReturnValue(0);
+            cir.setReturnValue(1);
         }
     }
 }

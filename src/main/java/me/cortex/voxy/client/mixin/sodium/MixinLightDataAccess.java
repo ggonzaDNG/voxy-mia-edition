@@ -45,8 +45,28 @@ public abstract class MixinLightDataAccess {
                             LightDataAccess.packBL(bl);
 
             cir.setReturnValue(newPacked);
-        } else if (AbyssUtil.getSection(x) > 3) {
-            cir.setReturnValue(0);
+        } else if (AbyssUtil.getSection(this.pos.getX()) > 3) {
+            int customValueForOtherLayers = 0;
+
+            int bl = LightDataAccess.unpackBL(packed);
+            int lu = LightDataAccess.unpackLU(packed);
+            float ao = LightDataAccess.unpackAO(packed);
+            boolean em = LightDataAccess.unpackEM(packed);
+            boolean op = LightDataAccess.unpackOP(packed);
+            boolean fo = LightDataAccess.unpackFO(packed);
+            boolean fc = LightDataAccess.unpackFC(packed);
+
+            int newPacked = LightDataAccess.packFC(fc) | 
+                            LightDataAccess.packFO(fo) | 
+                            LightDataAccess.packOP(op) | 
+                            LightDataAccess.packEM(em) | 
+                            LightDataAccess.packAO(ao) | 
+                            LightDataAccess.packLU(lu) | 
+                            LightDataAccess.packSL(customValueForOtherLayers) | 
+                            LightDataAccess.packBL(bl);
+
+
+            cir.setReturnValue(newPacked);
         }
     }
 }
