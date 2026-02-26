@@ -33,7 +33,7 @@ public class VoxyAbyssDebugScreenEntry implements DebugScreenEntry {
         if (vrs != null) {
             List<String> AbyssCoords = new ArrayList<>();
             vrs.addDebugInfo_Abyss(AbyssCoords);
-            lines.addToGroup(Identifier.fromNamespaceAndPath("voxy", "abyssCoords"), AbyssCoords);
+            lines.addToGroup(Identifier.fromNamespaceAndPath("voxy", "abyss_coords"), AbyssCoords);
         }
     }
 
