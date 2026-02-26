@@ -120,23 +120,7 @@ public class AbyssLightZoneManager {
 
     private static void createDefaultConfig() {
         try {
-            List<AbyssLightZoneEntry> defaults = new ArrayList<>();
-            AbyssLightZoneEntry box = new AbyssLightZoneEntry();
-            box.type = "box";
-            box.name = "yeah a box";
-            box.x1 = 0; box.y1 = 60; box.z1 = 0;
-            box.x2 = 10; box.y2 = 70; box.z2 = 10;
-            box.lightLevel = 15;
-            defaults.add(box);
-
-            AbyssLightZoneEntry circle = new AbyssLightZoneEntry();
-            circle.type = "circle";
-            circle.name = "aand a circle";
-            circle.x = 100; circle.z = 100;
-            circle.yMin = 50; circle.yMax = 100;
-            circle.radius = 25;
-            circle.lightLevel = 15;
-            defaults.add(circle);
+            String defaults = "hi";
 
             Files.createDirectories(CONFIG_PATH.getParent());
             try (FileWriter writer = new FileWriter(CONFIG_PATH.toFile())) {
