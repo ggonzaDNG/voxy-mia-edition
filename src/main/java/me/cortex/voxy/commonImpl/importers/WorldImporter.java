@@ -11,7 +11,7 @@ import me.cortex.voxy.common.voxelization.VoxelizedSection;
 import me.cortex.voxy.common.voxelization.WorldConversionFactory;
 import me.cortex.voxy.common.world.WorldEngine;
 import me.cortex.voxy.common.world.WorldUpdater;
-
+import me.cortex.voxy.client.core.util.AbyssLightZoneManager;
 import me.cortex.voxy.client.core.util.AbyssUtil;
 
 import net.minecraft.core.Holder;
@@ -511,25 +511,47 @@ public class WorldImporter implements IDataImporter {
             biomes = this.biomeCodec.parse(NbtOps.INSTANCE, optBiomes.get()).result().orElse(this.defaultBiomeProvider);
         }
         VoxelizedSection csec = WorldConversionFactory.convert(
-                SECTION_CACHE.get().setPosition(x, y, z),
-                this.world.getMapper(),
-                blockStates,
-                biomes,
-                (bx, by, bz) -> {
-                    int block = 0;
-                    int sky = 0;
-                    if (blockLight != null) {
-                        block = blockLight.get(bx, by, bz);
-                    }
-                    if (skyLight != null) {
-                        sky = skyLight.get(bx, by, bz);
-                    }
-                    if (AbyssUtil.getSection(x << 4) > 3) { // when we import a world we force our skylight value to 0 depending on the abyss layer
-                        sky = 0;
-                    }
-                    return (byte) (sky|(block<<4));
-                }
-        );
+        SECTION_CACHE.get().setPosition(x, y, z),
+        this.world.getMapper(),
+        blockStates,
+        biomes,
+        (bx, by, bz) -> { // bx, by, bz son coordenadas locales (0-15) dentro de la sección
+            int block = 0;
+            int sky = 0;
+
+            // 1. Obtener valores originales del chunk
+            if (blockLight != null) {
+                block = blockLight.get(bx, by, bz);
+            }
+            if (skyLight != null) {
+                sky = skyLight.get(bx, by, bz);
+            }
+
+            // 2. Calcular coordenadas Absolutas (Globales)
+            // 'x', 'y', 'z' son las coordenadas de la sección (del scope exterior)
+            // Multiplicamos por 16 (<< 4) y sumamos la local
+            int absX = (x << 4) + bx;
+            int absY = (y << 4) + by;
+            int absZ = (z << 4) + bz;
+
+            // 3. Verificación de Zonas (Prioridad 1)
+            // Consultamos si este bloque específico está en una zona definida (Caja o Círculo)
+            int forcedSky = AbyssLightZoneManager.getZoneLightLevel(absX, absY, absZ);
+
+            if (forcedSky != -1) {
+                sky = forcedSky;
+            } 
+            // 4. Verificación del Abismo (Prioridad 2)
+            // Si no hay zona custom, aplicamos la lógica de capas profundas
+            // Nota: Usamos absX para mayor precisión, o mantenemos (x<<4) según tu API
+            else if (AbyssUtil.getSection(absX) > 3) { 
+                sky = 1;
+            }
+
+            // Retornamos el byte empaquetado
+            return (byte) (sky | (block << 4));
+        }
+    );
 
         WorldConversionFactory.mipSection(csec, this.world.getMapper());
         WorldUpdater.insertUpdate(this.world, csec);

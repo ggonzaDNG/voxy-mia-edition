@@ -80,6 +80,8 @@ public class VoxyRenderSystem {
         //Keep the world loaded, NOTE: this is done FIRST, to keep and ensure that even if the rest of loading takes more
         // than timeout, we keep the world acquired
         world.acquireRef();
+        Logger.info("Creating Voxy render system");
+
         System.gc();
 
         if (Minecraft.getInstance().options.getEffectiveRenderDistance()<3) {
@@ -220,7 +222,6 @@ public class VoxyRenderSystem {
 
         TimingStatistics.resetSamplers();
 
-        long startTime = System.nanoTime();
         TimingStatistics.all.start();
         GPUTiming.INSTANCE.marker();//Start marker
         TimingStatistics.main.start();
@@ -292,6 +293,7 @@ public class VoxyRenderSystem {
         {//Reset state manager stuffs
             glUseProgram(0);
             glEnable(GL_DEPTH_TEST);
+            glDisable(GL_STENCIL_TEST);
 
             GlStateManager._glBindVertexArray(0);//Clear binding
 
@@ -407,7 +409,7 @@ public class VoxyRenderSystem {
     }
 
     public void setRenderDistance(int renderDistance) {
-        this.renderDistanceTracker.setRenderDistance(renderDistance);
+        this.renderDistanceTracker.setRenderDistance(renderDistance+1);//the +1 is to cover the outer ring of chunks when rendering a circle
     }
 
     public Viewport<?> getViewport() {
@@ -416,10 +418,6 @@ public class VoxyRenderSystem {
         }
         return this.viewportSelector.getViewport();
     }
-
-
-
-
 
     public void addDebugInfo(List<String> debug) {
         debug.add("Buf/Tex [#/Mb]: [" + GlBuffer.getCount() + "/" + (GlBuffer.getTotalSize()/1_000_000) + "],[" + GlTexture.getCount() + "/" + (GlTexture.getEstimatedTotalSize()/1_000_000)+"]");

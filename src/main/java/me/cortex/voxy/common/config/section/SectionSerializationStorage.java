@@ -48,7 +48,7 @@ public class SectionSerializationStorage extends SectionStorage {
     public void saveSection(WorldSection section) {
         var saveData = SaveLoadSystem3.serialize(section);
         this.backend.setSectionData(section.key, saveData);
-        saveData.free();
+        //Note that savedData isnt freed (the save system uses a cache)
     }
 
     @Override
@@ -72,8 +72,8 @@ public class SectionSerializationStorage extends SectionStorage {
     }
 
     @Override
-    public void iterateStoredSectionPositions(LongConsumer consumer) {
-        this.backend.iterateStoredSectionPositions(consumer);
+    public void iteratePositions(int level, LongConsumer consumer) {
+        this.backend.iteratePositions(level, consumer);
     }
 
     public static class Config extends SectionStorageConfig {
