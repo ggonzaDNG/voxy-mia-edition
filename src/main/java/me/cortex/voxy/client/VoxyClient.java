@@ -65,7 +65,7 @@ public class VoxyClient implements ClientModInitializer {
             }
         });
 
-        DebugScreenEntries.register(Identifier.fromNamespaceAndPath("voxy","abyssCoords"), new VoxyAbyssDebugScreenEntry());
+        DebugScreenEntries.register(Identifier.fromNamespaceAndPath("voxy","abyss_coords"), new VoxyAbyssDebugScreenEntry());
 
         FabricLoader.getInstance()
                 .getEntrypoints("frex_flawless_frames", Consumer.class)
