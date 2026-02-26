@@ -20,7 +20,7 @@ public abstract class MixinDebugScreenEntryList {
     private void voxy$injectVersionDisplay(CallbackInfo cir) {
         if (this.isOverlayVisible()) {
             var id0 = Identifier.fromNamespaceAndPath("voxy", "version");
-            var id1 = Identifier.fromNamespaceAndPath("voxy", "abyssCoords");
+            var id1 = Identifier.fromNamespaceAndPath("voxy", "abyss_coords");
             if (!this.currentlyEnabled.contains(id0)) {
                 this.currentlyEnabled.add(id0);
             }
