@@ -237,7 +237,7 @@ remapJar {
     }
 }
 
-project.ext.lwjglVersion = "3.4.1"
+project.ext.lwjglVersion = "3.3.3"
 project.ext.lwjglNatives = "natives-windows"
 
 repositories {

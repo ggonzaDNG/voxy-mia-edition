@@ -411,10 +411,16 @@ public class VoxyRenderSystem {
         ).mulLocal(makeProjectionMatrix(nearVoxy, 16*3000));
     }*/
 
+    private static float getGameFoV() {
+        var client = Minecraft.getInstance();
+        var gameRenderer = client.gameRenderer;
+        return gameRenderer.getFov(gameRenderer.getMainCamera(), client.getDeltaTracker().getGameTimeDeltaPartialTick(true), true);
+    }
+
     private static Matrix4f computeProjectionMat(Matrix4fc base) {
 
         //this jank is to capture the extra crap they inject like viewbobbing
-        var rawMCProj = Minecraft.getInstance().gameRenderer.getGameRenderState().levelRenderState.cameraRenderState.projectionMatrix;
+        var rawMCProj = Minecraft.getInstance().gameRenderer.getProjectionMatrix(getGameFoV());
         var extraProjection = rawMCProj.invert(new Matrix4f()).mul(base);
 
         float near = getRenderDistance()<=32.0f?8f:16f;
