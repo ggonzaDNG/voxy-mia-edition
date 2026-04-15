@@ -68,6 +68,7 @@ public class VoxyRenderSystem {
     private final ViewportSelector<?> viewportSelector;
 
     private final AbstractRenderPipeline pipeline;
+    private final RenderProperties properties;
 
     private static AbstractSectionRenderer.Factory<?,? extends IGeometryData> getRenderBackendFactory() {
         //TODO: need todo a thing where selects optimal section render based on if supports the pipeline and geometry data type
@@ -101,8 +102,8 @@ public class VoxyRenderSystem {
 
             this.worldIn = world;
 
+            this.properties = new RenderProperties(false, false, false);
             var backendFactory = getRenderBackendFactory();
-
             {
                 this.modelService = new ModelBakerySubsystem(world.getMapper());
                 this.renderGen = new RenderGenerationService(world, this.modelService, sm, IUsesMeshlets.class.isAssignableFrom(backendFactory.clz()));
@@ -121,7 +122,7 @@ public class VoxyRenderSystem {
                 this.nodeManager.start();
             }
 
-            this.pipeline = RenderPipelineFactory.createPipeline(this.nodeManager, this.nodeCleaner, this.traversal, this::frexStillHasWork);
+            this.pipeline = RenderPipelineFactory.createPipeline(this.properties, this.nodeManager, this.nodeCleaner, this.traversal, this::frexStillHasWork);
             this.pipeline.setupExtraModelBakeryData(this.modelService);//Configure the model service
 
             //Late stage traversal compile for shaders with taa
@@ -185,7 +186,7 @@ public class VoxyRenderSystem {
         }
 
         //cameraY += 100;
-        var voxyProjection = computeProjectionMat(vanillaProjection);
+        var voxyProjection = computeProjectionMat(vanillaProjection, this.properties.isZero2One());
 
         int[] dims = new int[4];
         glGetIntegerv(GL_VIEWPORT, dims);
@@ -399,11 +400,11 @@ public class VoxyRenderSystem {
         // at short render distances the vanilla terrain doesnt end up covering the 16f near plane voxy uses
         // meaning that it explodes (due to near plane clipping).. _badly_ with the rastered culling being wrong in rare cases for the immediate
         // sections rendered after the vanilla render distance
-        float nearVoxy = Minecraft.getInstance().gameRenderer.getRenderDistance()<=32.0f?8f:16f;
+        float nearVoxy = getRenderDistance()<=32.0f?8f:16f;
         nearVoxy = VoxyClient.disableSodiumChunkRender()?0.1f:nearVoxy;
 
         return base.mulLocal(
-                Minecraft.getInstance().gameRenderer.getProjectionMatrix(getGameFoV()).invert(),
+                Minecraft.getInstance().gameRenderer.getGameRenderState().levelRenderState.cameraRenderState.projectionMatrix.invert(new Matrix4f()),
                 new Matrix4f()
         ).mulLocal(makeProjectionMatrix(nearVoxy, 16*3000));
     }*/
@@ -414,7 +415,7 @@ public class VoxyRenderSystem {
         return gameRenderer.getFov(gameRenderer.getMainCamera(), client.getDeltaTracker().getGameTimeDeltaPartialTick(true), true);
     }
 
-    private static Matrix4f computeProjectionMat(Matrix4fc base) {
+    private static Matrix4f computeProjectionMat(Matrix4fc base, boolean zero2one) {
 
         //this jank is to capture the extra crap they inject like viewbobbing
         var rawMCProj = Minecraft.getInstance().gameRenderer.getProjectionMatrix(getGameFoV());
@@ -434,8 +435,8 @@ public class VoxyRenderSystem {
 
         return extraProjection.mulLocal(
                 new Matrix4f(rawMCProj)
-                .m22((far + near) / (near - far))
-                .m32((far+far) * near / (near - far))
+                .m22((zero2one?far:(far+near)) / (near - far))
+                .m32((zero2one?far:(far+far)) * near / (near - far))
         );
     }
 
