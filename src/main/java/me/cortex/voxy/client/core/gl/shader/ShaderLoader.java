@@ -28,7 +28,7 @@ public class ShaderLoader {
         private static final Pattern IMPORT_PATTERN = Pattern.compile("#import <(?<namespace>.*):(?<path>.*)>");
         public static List<String> parseRoot(Identifier id) {
             List<String> out = new ArrayList<>();
-            for (var line : toLines(loadShaderAsset(id))) {
+            for (var line : loadShaderAsset(id).lines().toList()) {
                 if (line.startsWith("#version")) {
                     continue;
                 } else if (line.startsWith("#import")) {
@@ -43,13 +43,6 @@ public class ShaderLoader {
             return out;
         }
 
-        private static List<String> toLines(String src) {
-            try {
-                return new BufferedReader(new StringReader(src)).readAllLines();
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-        }
         private static String loadShaderAsset(Identifier id) {
             String path = String.format("/assets/%s/shaders/%s", id.getNamespace(), id.getPath());
             try (InputStream in = ShaderLoadingParser.class.getResourceAsStream(path)) {
