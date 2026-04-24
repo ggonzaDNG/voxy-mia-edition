@@ -217,22 +217,6 @@ public class ModelFactory {
 
         int flags = this.bakery2.renderToOutput(bake.state, this.bakeScratchBuffer);
 
-        boolean hasDarkenedTextures = (flags&2)!=0;
-        boolean isShaded = (flags&1)!=0;
-
-        ChunkSectionLayer layer = null;
-        {
-            var blockState = bake.state;
-            if (blockState.getBlock() instanceof LiquidBlock) {
-                layer = ItemBlockRenderTypes.getRenderLayer(blockState.getFluidState());
-            } else {
-                if (blockState.getBlock() instanceof LeavesBlock) {
-                    layer = ChunkSectionLayer.SOLID;
-                } else {
-                    layer = ItemBlockRenderTypes.getChunkRenderType(blockState);
-                }
-            }
-        }
 
         {//Create texture data
             long ptr = this.bakeScratchBuffer;
@@ -254,6 +238,23 @@ public class ModelFactory {
                     depth[i] = (int) (value>>>32);
                 }
                 textureData[face] = new ColourDepthTextureData(colour, depth, MODEL_TEXTURE_SIZE, MODEL_TEXTURE_SIZE);
+            }
+        }
+
+        boolean hasDarkenedTextures = (flags&2)!=0;
+        boolean isShaded = (flags&1)!=0;
+
+        ChunkSectionLayer layer = null;
+        {
+            var blockState = bake.state;
+            if (blockState.getBlock() instanceof LiquidBlock) {
+                layer = ItemBlockRenderTypes.getRenderLayer(blockState.getFluidState());
+            } else {
+                if (blockState.getBlock() instanceof LeavesBlock) {
+                    layer = ChunkSectionLayer.SOLID;
+                } else {
+                    layer = ItemBlockRenderTypes.getChunkRenderType(blockState);
+                }
             }
         }
 
