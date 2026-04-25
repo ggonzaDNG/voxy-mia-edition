@@ -52,7 +52,7 @@ public class SoftwareModelTextureBakery {
     private static final Matrix4f[] VIEWS = new Matrix4f[6];
 
     private final ReuseVertexConsumer vc = new ReuseVertexConsumer();
-    private final SoftwareRasterizer rasterizer = new SoftwareRasterizer();
+    private final SoftwareRasterizer rasterizer = new SoftwareRasterizer(ModelFactory.MODEL_TEXTURE_SIZE);
 
     public SoftwareModelTextureBakery() {
     }
@@ -246,6 +246,7 @@ public class SoftwareModelTextureBakery {
             if (!this.vc.isEmpty()) {//only render if there... is shit to render
                 for (int i = 0; i < VIEWS.length; i++) {
                     this.rasterizer.setFaceCull(i==1||i==2||i==4);
+                    this.rasterizer.clear();
 
                     this.rasterizer.raster(VIEWS[i], this.vc);
                     UnsafeUtil.memcpy(this.rasterizer.getRawFramebuffer(), outputBuffer+(SINGLE_FACE_OUTPUT_SIZE*i));
@@ -262,6 +263,7 @@ public class SoftwareModelTextureBakery {
                 isAnyDarkend |= this.vc.anyDarkendTex;
 
                 this.rasterizer.setFaceCull(i==1||i==2||i==4);
+                this.rasterizer.clear();
 
                 //The projection matrix
                 this.rasterizer.raster(VIEWS[i], this.vc);

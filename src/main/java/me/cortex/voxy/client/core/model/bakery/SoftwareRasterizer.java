@@ -13,8 +13,6 @@ import java.util.Arrays;
 import java.util.Random;
 
 public class SoftwareRasterizer {
-    public static final int TARGET_SIZE = ModelFactory.MODEL_TEXTURE_SIZE;
-
     private final Vector4f scratch = new Vector4f();
 
     private final Vector3f scratch1 = new Vector3f();
@@ -38,7 +36,9 @@ public class SoftwareRasterizer {
 
     private static final long DEPTH_MASK = ((1L<<24)-1)<<(64-24);
     private static final long CLEAR_VALUE = DEPTH_MASK;//set the depth to max value and rest of bits to 0
-    private final long[] framebuffer = new long[TARGET_SIZE*TARGET_SIZE];
+
+    private final int targetSize;
+    private final long[] framebuffer;
 
     private boolean cullBackFace;
     private boolean doTheBlending;
@@ -47,7 +47,9 @@ public class SoftwareRasterizer {
     private int samplerHeight;
     private int[] samplerTexture;
 
-    public SoftwareRasterizer() {
+    public SoftwareRasterizer(int targetSize) {
+        this.targetSize = targetSize;
+        this.framebuffer = new long[targetSize*targetSize];
     }
 
     public void setFaceCull(boolean isBackFaceCulling) {
@@ -71,12 +73,17 @@ public class SoftwareRasterizer {
         return this.samplerTexture[this.samplerWidth*pv+pu];
     }
 
-    public void raster(Matrix4f mvp, ReuseVertexConsumer vertices) {
+    public void clear() {
         Arrays.fill(this.framebuffer, CLEAR_VALUE);
+    }
 
-        int qc = vertices.quadCount();
-        for (int i = 0; i < qc; i++) {
-            this.rasterQuad(mvp, vertices.getAddress()+ReuseVertexConsumer.VERTEX_FORMAT_SIZE*4*i);
+    public void raster(Matrix4f mvp, ReuseVertexConsumer vertices) {
+        this.raster(mvp, vertices.getAddress(), vertices.quadCount());
+    }
+    public void raster(Matrix4f mvp, long verticesAddr, int quadCount) {
+        if (quadCount == 0) return;
+        for (int i = 0; i < quadCount; i++) {
+            this.rasterQuad(mvp, verticesAddr+ReuseVertexConsumer.VERTEX_FORMAT_SIZE*4L*i);
         }
         //Arrays.fill(this.framebuffer, -1);
     }
@@ -132,9 +139,9 @@ public class SoftwareRasterizer {
         }*/
 
         int minX = Math.max((int) Math.floor(Math.min(Math.min(v1.x, v2.x), v3.x)), 0);
-        int maxX = Math.min((int) Math.ceil(Math.max(Math.max(v1.x, v2.x), v3.x)), TARGET_SIZE-1);
+        int maxX = Math.min((int) Math.ceil(Math.max(Math.max(v1.x, v2.x), v3.x)), this.targetSize-1);
         int minY = Math.max((int) Math.floor(Math.min(Math.min(v1.y, v2.y), v3.y)), 0);
-        int maxY = Math.min((int) Math.ceil(Math.max(Math.max(v1.y, v2.y), v3.y)), TARGET_SIZE-1);
+        int maxY = Math.min((int) Math.ceil(Math.max(Math.max(v1.y, v2.y), v3.y)), this.targetSize-1);
 
         float invArea = 1.0f/area;
         for (int py = minY; py<=maxY; py++) {
@@ -148,7 +155,7 @@ public class SoftwareRasterizer {
                     //Dont need to worry about perspective correction afak as it should already be all correct
 
                     //pixel is inside the triangle
-                    this.rasterPixel(px+py*TARGET_SIZE, w1, w2, w3);
+                    this.rasterPixel(px+py*this.targetSize, w1, w2, w3);
                 }
             }
         }
@@ -171,6 +178,7 @@ public class SoftwareRasterizer {
 
 
         final int ALPHA_CUTOFF_THRESHOLD = 0;
+        //TODO: meta&1 OR if we are blending
         if ((meta&1)!=0 && (colour>>>24)<=ALPHA_CUTOFF_THRESHOLD) {//Discard on small alpha
             return;
         }
@@ -244,7 +252,7 @@ public class SoftwareRasterizer {
         var vec = transform.transformProject(this.scratch);
         if (Math.abs(this.scratch.w-1.0f)>0.000001f)
             throw new IllegalStateException();
-        out.set(maintainPrecision(Math.fma(vec.x, 0.5f, 0.5f)*TARGET_SIZE), maintainPrecision(Math.fma(vec.y, 0.5f, 0.5f)*TARGET_SIZE), vec.z);//TODO: dont know if z transform is correct
+        out.set(maintainPrecision(Math.fma(vec.x, 0.5f, 0.5f)*this.targetSize), maintainPrecision(Math.fma(vec.y, 0.5f, 0.5f)*this.targetSize), vec.z);//TODO: dont know if z transform is correct
     }
 
 
