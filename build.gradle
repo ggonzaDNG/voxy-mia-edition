@@ -1,5 +1,5 @@
 plugins {
-    id 'fabric-loom' version "1.14-SNAPSHOT"
+    id 'fabric-loom' version "1.16-SNAPSHOT"
     id 'maven-publish'
 }
 def INCLUDE_OTHER_ARCHS = "true".equalsIgnoreCase(project.findProperty("includeOtherArchs"))
@@ -122,7 +122,7 @@ dependencies {
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
     if (true) {
-        modImplementation "maven.modrinth:sodium:mc1.21.11-0.8.7-fabric"
+        modImplementation "maven.modrinth:sodium:mc1.21.11-0.8.11-fabric"
     } else {
         modImplementation "net.caffeinemc:sodium-fabric:0.8.4-SNAPSHOT+mc1.21.11+"
     }
