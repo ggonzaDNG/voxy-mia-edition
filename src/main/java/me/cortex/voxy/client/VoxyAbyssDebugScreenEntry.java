@@ -28,7 +28,7 @@ public class VoxyAbyssDebugScreenEntry implements DebugScreenEntry {
 
         VoxyRenderSystem vrs = null;
         var wr = Minecraft.getInstance().levelRenderer;
-        if (wr != null) vrs = ((IGetVoxyRenderSystem) wr).getVoxyRenderSystem();
+        if (wr != null) vrs = ((IGetVoxyRenderSystem) wr).voxy$getRenderSystem();
 
         if (vrs != null) {
             List<String> AbyssCoords = new ArrayList<>();

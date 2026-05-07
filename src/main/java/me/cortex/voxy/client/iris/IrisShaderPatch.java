@@ -11,8 +11,11 @@ import net.irisshaders.iris.shaderpack.ShaderPack;
 import net.irisshaders.iris.shaderpack.include.AbsolutePackPath;
 import org.lwjgl.opengl.ARBDrawBuffersBlend;
 
+import java.io.IOException;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Type;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.function.Function;
 import java.util.function.IntSupplier;
@@ -22,7 +25,7 @@ import static org.lwjgl.opengl.GL33.*;
 
 public class IrisShaderPatch {
     public static final int VERSION = ((IntSupplier)()->1).getAsInt();
-    public static final int SHADER_DEFINE_VERSION = 1;
+    public static final int SHADER_DEFINE_VERSION = 2;
 
 
     private static final class SSBODeserializer implements JsonDeserializer<Int2ObjectOpenHashMap<String>> {
@@ -174,6 +177,7 @@ public class IrisShaderPatch {
         public boolean excludeLodsFromVanillaDepth;
         public float[] renderScale;
         public boolean useViewportDims;
+        public boolean skipShaderDepthHackFix;
         //public boolean deferTranslucentRendering;
         public String checkValid() {
             if (this.blending != null) {
@@ -225,6 +229,7 @@ public class IrisShaderPatch {
         return this.patchData.useViewportDims;
     }
 
+    public boolean skipShaderDepthHackFix() { return this.patchData.skipShaderDepthHackFix; }
     public Int2ObjectMap<String> getSSBOs() {
         return new Int2ObjectLinkedOpenHashMap<>(this.ssbos);
     }
@@ -235,7 +240,7 @@ public class IrisShaderPatch {
         return this.patchData.translucentPatchData;
     }
     public String getTAAShift() {
-        return this.patchData.taaOffset == null?"{return vec2(0.0);}":this.patchData.taaOffset;
+        return this.patchData.taaOffset;// == null?"{return vec2(0.0);}":this.patchData.taaOffset;
     }
     public String[] getUniformList() {
         return this.patchData.uniforms;
@@ -338,6 +343,10 @@ public class IrisShaderPatch {
                 }
                 voxyPatchData = builder.toString();
             }
+
+            //Stupid chunk fade in patch (should probably just breaks
+            voxyPatchData = voxyPatchData.replaceAll("void _cfi_ignoreMarker\\(\\) \\{\\}", "");
+
             patchData = GSON.fromJson(voxyPatchData, PatchGson.class);
             if (patchData == null) {
                 throw new IllegalStateException("Voxy patch json returned null, this is most likely due to malformed json file");
@@ -368,8 +377,13 @@ public class IrisShaderPatch {
             }
         } catch (Exception e) {
             patchData = null;
-            Logger.error("Failed to parse patch data gson",e);
-            throw new ShaderLoadError("Failed to parse patch data gson",e);
+            Logger.error("Failed to parse patch data gson, dumping json",e);
+            try {
+                Files.writeString(Path.of("JSON_DUMP.txt"), voxyPatchData);
+            } catch (IOException j) {
+                throw new RuntimeException(j);
+            }
+            throw new ShaderLoadError("Failed to parse patch data gson, dumping json",e);
         }
         if (patchData == null) {
             return null;

@@ -3,9 +3,11 @@ package me.cortex.voxy.client.core.rendering.hierachical;
 import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap;
 import me.cortex.voxy.client.RenderStatistics;
 import me.cortex.voxy.client.config.VoxyConfig;
+import me.cortex.voxy.client.core.AbstractRenderPipeline;
 import me.cortex.voxy.client.core.gl.GlBuffer;
 import me.cortex.voxy.client.core.gl.shader.AutoBindingShader;
 import me.cortex.voxy.client.core.gl.shader.Shader;
+import me.cortex.voxy.client.core.gl.shader.ShaderLoader;
 import me.cortex.voxy.client.core.gl.shader.ShaderType;
 import me.cortex.voxy.client.core.rendering.Viewport;
 import me.cortex.voxy.client.core.rendering.building.RenderGenerationService;
@@ -16,6 +18,8 @@ import me.cortex.voxy.common.Logger;
 import me.cortex.voxy.common.util.MemoryBuffer;
 import me.cortex.voxy.common.world.WorldEngine;
 import org.lwjgl.system.MemoryUtil;
+
+import java.util.List;
 
 import static me.cortex.voxy.client.core.rendering.util.PrintfDebugUtil.PRINTF_processor;
 import static org.lwjgl.opengl.GL11.*;
@@ -71,7 +75,36 @@ public class HierarchicalOcclusionTraverser {
 
     private final int hizSampler = glGenSamplers();
 
-    private final AutoBindingShader traversal = Shader.makeAuto(PRINTF_processor)
+    private AutoBindingShader traversal;
+
+    private AbstractRenderPipeline pipeline;//Used to bind shader taa uniforms
+
+    public HierarchicalOcclusionTraverser(AsyncNodeManager nodeManager, NodeCleaner nodeCleaner, RenderGenerationService meshGen) {
+        this.nodeCleaner = nodeCleaner;
+        this.nodeManager = nodeManager;
+        this.meshGen = meshGen;
+        this.requestBuffer = new GlBuffer(MAX_REQUEST_QUEUE_SIZE*8L+8).zero();
+        this.nodeBuffer = new GlBuffer(nodeManager.maxNodeCount*16L).fill(-1);
+
+
+        glSamplerParameteri(this.hizSampler, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
+        glSamplerParameteri(this.hizSampler, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glSamplerParameteri(this.hizSampler, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glSamplerParameteri(this.hizSampler, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+
+        this.topNode2idxMapping.defaultReturnValue(-1);
+        this.nodeManager.setTLNAddRemoveCallbacks(this::addTLN, this::remTLN);
+    }
+
+    public void lateStageCompile(AbstractRenderPipeline pipeline) {
+        String taa = pipeline.taaFunction("getTAA");
+        var scr = ShaderLoader.parse("voxy:lod/hierarchical/traversal_dev.comp");
+        if (taa != null) {
+            scr += "\n\n\n" + taa;
+            this.pipeline = pipeline;
+        }
+        this.traversal = Shader.makeAuto(PRINTF_processor)
+            .apply(pipeline.properties::apply)
             .defineIf("DEBUG", HIERARCHICAL_SHADER_DEBUG)
             .define("MAX_ITERATIONS", MAX_ITERATIONS)
             .define("LOCAL_SIZE_BITS", LOCAL_WORK_SIZE_BITS)
@@ -94,22 +127,11 @@ public class HierarchicalOcclusionTraverser {
             .defineIf("HAS_STATISTICS", RenderStatistics.enabled)
             .defineIf("STATISTICS_BUFFER_BINDING", RenderStatistics.enabled, STATISTICS_BUFFER_BINDING)
 
-            .add(ShaderType.COMPUTE, "voxy:lod/hierarchical/traversal_dev.comp")
+            .defineIf("TAA", taa != null)
+
+            .addSource(ShaderType.COMPUTE, scr)
             .compile();
 
-
-    public HierarchicalOcclusionTraverser(AsyncNodeManager nodeManager, NodeCleaner nodeCleaner, RenderGenerationService meshGen) {
-        this.nodeCleaner = nodeCleaner;
-        this.nodeManager = nodeManager;
-        this.meshGen = meshGen;
-        this.requestBuffer = new GlBuffer(MAX_REQUEST_QUEUE_SIZE*8L+8).zero();
-        this.nodeBuffer = new GlBuffer(nodeManager.maxNodeCount*16L).fill(-1);
-
-
-        glSamplerParameteri(this.hizSampler, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
-        glSamplerParameteri(this.hizSampler, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glSamplerParameteri(this.hizSampler, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glSamplerParameteri(this.hizSampler, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 
         this.traversal
                 .ubo("SCENE_UNIFORM_BINDING", this.uniformBuffer)
@@ -118,9 +140,6 @@ public class HierarchicalOcclusionTraverser {
                 .ssbo("NODE_QUEUE_META_BINDING", this.queueMetaBuffer)
                 .ssbo("RENDER_TRACKER_BINDING", this.nodeCleaner.visibilityBuffer)
                 .ssboIf("STATISTICS_BUFFER_BINDING", this.statisticsBuffer);
-
-        this.topNode2idxMapping.defaultReturnValue(-1);
-        this.nodeManager.setTLNAddRemoveCallbacks(this::addTLN, this::remTLN);
     }
 
     private void addTLN(int id) {
@@ -227,6 +246,10 @@ public class HierarchicalOcclusionTraverser {
 
         this.traversal.bind();
         this.bindings(viewport);
+
+        //Bind shader uniforms for taa if we have a pipeline
+        if (this.pipeline != null) this.pipeline.bindUniforms();
+
         PrintfDebugUtil.bind();
 
         if (RenderStatistics.enabled) {
@@ -360,7 +383,7 @@ public class HierarchicalOcclusionTraverser {
     }
 
     public void free() {
-        this.traversal.free();
+        if (this.traversal != null) this.traversal.free();
         this.requestBuffer.free();
         this.nodeBuffer.free();
         this.uniformBuffer.free();
@@ -373,4 +396,11 @@ public class HierarchicalOcclusionTraverser {
     }
 
     private static final long SCRATCH = MemoryUtil.nmemAlloc(32);//32 bytes of scratch memory
+
+    public void addDebug(List<String> debug) {
+        //Conditionally add debug
+        if (this.topNodeCount>this.idx2topNodeMapping.length/2) {
+            debug.add("TLN#: " + this.topNodeCount);
+        }
+    }
 }

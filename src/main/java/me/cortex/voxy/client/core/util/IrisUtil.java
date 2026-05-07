@@ -16,7 +16,7 @@ public class IrisUtil {
 
     public record CapturedViewportParameters(ChunkRenderMatrices matrices, FogParameters parameters, double x, double y, double z) {
         public Viewport<?> apply(VoxyRenderSystem vrs) {
-            return vrs.setupViewport(this.matrices, this.parameters, this.x, this.y, this.z);
+            return vrs.setupViewport(this.matrices.projection(), this.matrices.modelView(), this.parameters, this.x, this.y, this.z);
         }
     }
 
@@ -58,11 +58,17 @@ public class IrisUtil {
     }
 
     private static boolean irisShaderPackEnabled0() {
-        return Iris.isPackInUseQuick();
+        return Iris.getCurrentPack().isPresent();
     }
 
     public static boolean irisShaderPackEnabled() {
         return IRIS_INSTALLED && irisShaderPackEnabled0();
+    }
+    private static boolean irisShadersEnabledInConfig0() {
+        return !Iris.getCurrentPack().isEmpty();
+    }
+    public static boolean irisShadersEnabledInConfig() {
+        return IRIS_INSTALLED && irisShadersEnabledInConfig0();
     }
     public static void disableIrisShaders() {
         if(IRIS_INSTALLED) disableIrisShaders0();

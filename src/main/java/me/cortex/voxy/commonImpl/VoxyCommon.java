@@ -22,7 +22,9 @@ public class VoxyCommon implements ModInitializer {
         } else {
             IS_IN_MINECRAFT = true;
             var version = mod.getMetadata().getVersion().getFriendlyString();
+            
             MOD_VERSION = version;
+
             IS_DEDICATED_SERVER = FabricLoader.getInstance().getEnvironmentType() == EnvType.SERVER;
             Serialization.init();
         }
