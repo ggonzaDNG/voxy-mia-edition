@@ -71,15 +71,16 @@ public class VoxyClientInstance extends VoxyInstance {
     protected SectionStorage createStorage(WorldIdentifier identifier) {
         var ctx = new ConfigBuildCtx();
         
-        File sharedFolder = basePath.resolveSibling(StringUtils.substringAfter(basePath.toFile().getName(), ".")).toFile();
-        String finalBasePath = sharedFolder.exists() && sharedFolder.isDirectory() ? sharedFolder.getAbsolutePath() : basePath.toString();
+        // File sharedFolder = basePath.resolveSibling(StringUtils.substringAfter(basePath.toFile().getName(), ".")).toFile();
+        // String finalBasePath = sharedFolder.exists() && sharedFolder.isDirectory() ? sharedFolder.getAbsolutePath() : basePath.toString();
 
-        ctx.setProperty(ConfigBuildCtx.BASE_SAVE_PATH, finalBasePath);
-        ctx.setProperty(ConfigBuildCtx.WORLD_IDENTIFIER, getWorldId(identifier));
+        // ctx.setProperty(ConfigBuildCtx.BASE_SAVE_PATH, finalBasePath);
+        // ctx.setProperty(ConfigBuildCtx.WORLD_IDENTIFIER, getWorldId(identifier));
+        // ctx.setProperty(ConfigBuildCtx.PLAYER_UUID, Minecraft.getInstance().getUser().getProfileId().toString().replace(':','-'));
+
+        ctx.setProperty(ConfigBuildCtx.BASE_SAVE_PATH, this.basePath.toString()); // comment three for unified folder lod
+        ctx.setProperty(ConfigBuildCtx.WORLD_IDENTIFIER, identifier.getWorldId()); // and uncomment the five ones above
         ctx.setProperty(ConfigBuildCtx.PLAYER_UUID, Minecraft.getInstance().getUser().getProfileId().toString().replace(':','-'));
-
-        //ctx.setProperty(ConfigBuildCtx.BASE_SAVE_PATH, this.basePath.toString()); // comment these two for unified folder lod
-        //ctx.setProperty(ConfigBuildCtx.WORLD_IDENTIFIER, identifier.getWorldId()); // and uncomment the four ones above
 
         ctx.pushPath(ConfigBuildCtx.DEFAULT_STORAGE_PATH);
 
